@@ -1,0 +1,5 @@
+pandas>=2.2.0
+requests>=2.32.0
+matplotlib>=3.9.0
+jupyter>=1.1.0
+ipykernel>=6.29.0
