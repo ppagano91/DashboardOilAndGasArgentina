@@ -84,6 +84,20 @@ jupyter notebook notebooks/01_exploracion_sesco.ipynb
 
 Alternativa con VS Code / Cursor: abrir el archivo `.ipynb` y seleccionar el kernel de `exploration/.venv`.
 
+## Primer dashboard MVP (Streamlit)
+
+Instalar dependencias de visualización:
+
+```bash
+pip install streamlit plotly
+```
+
+Ejecutar el dashboard:
+
+```bash
+streamlit run exploration/streamlit_app/app.py
+```
+
 ## Flujo recomendado
 
 1. Ejecutar `inspect_ckan_resources.py` para ver el catálogo completo.
