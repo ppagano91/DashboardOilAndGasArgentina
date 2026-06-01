@@ -522,6 +522,111 @@ def format_number(value: float, decimals: int = 0) -> str:
     return f"{value:.{decimals}f}".replace(".", ",")
 
 
+def get_valid_periods_by_group(
+    df: pd.DataFrame,
+    producto: str,
+    agrupador_tipo: str,
+    threshold: float = 0.5,
+    *,
+    verbose: bool = False,
+) -> dict[str, Any]:
+    """
+    Detecta períodos válidos por combinación producto + agrupador_tipo.
+
+    Evita usar un único corte global cuando cada recurso puede tener
+    distinto último período cargado.
+    """
+    sub = df[
+        (df["producto"] == producto) & (df["agrupador_tipo"] == agrupador_tipo)
+    ].copy()
+    if sub.empty:
+        return {
+            "producto": producto,
+            "agrupador_tipo": agrupador_tipo,
+            "latest_period": None,
+            "latest_valid_period": None,
+            "excluded_period": None,
+            "ratio": None,
+            "periodos_validos": [],
+        }
+
+    agg = (
+        sub.groupby(["periodo_dt", "periodo_str"], as_index=False)["produccion"]
+        .sum()
+        .sort_values("periodo_dt")
+    )
+    latest_period = agg.iloc[-1]["periodo_str"]
+    latest_valid_period = latest_period
+    excluded_period = None
+    ratio = None
+    periodos_validos = agg["periodo_dt"].tolist()
+
+    if len(agg) >= 2:
+        ultimo_valor = agg.iloc[-1]["produccion"]
+        penultimo_valor = agg.iloc[-2]["produccion"]
+        ratio = ultimo_valor / penultimo_valor if penultimo_valor else 1.0
+        if ratio < threshold:
+            excluded_period = latest_period
+            latest_valid_period = agg.iloc[-2]["periodo_str"]
+            periodos_validos = agg.iloc[:-1]["periodo_dt"].tolist()
+            if verbose:
+                print(
+                    f"[{producto}/{agrupador_tipo}] se excluye {excluded_period} "
+                    f"({ratio * 100:.1f}% vs período anterior)"
+                )
+
+    return {
+        "producto": producto,
+        "agrupador_tipo": agrupador_tipo,
+        "latest_period": latest_period,
+        "latest_valid_period": latest_valid_period,
+        "excluded_period": excluded_period,
+        "ratio": ratio,
+        "periodos_validos": periodos_validos,
+    }
+
+
+def build_totals_comparison_table(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compara magnitudes por período y producto entre provincia, cuenca y empresa.
+
+    No suma vistas entre sí; sólo permite controlar diferencias de cobertura.
+    """
+    base = (
+        df.groupby(["periodo_str", "producto", "agrupador_tipo"], as_index=False)["produccion"]
+        .sum()
+    )
+    pivot = (
+        base.pivot_table(
+            index=["periodo_str", "producto"],
+            columns="agrupador_tipo",
+            values="produccion",
+            aggfunc="sum",
+        )
+        .reset_index()
+        .rename_axis(None, axis=1)
+        .rename(
+            columns={
+                "provincia": "total_provincia",
+                "cuenca": "total_cuenca",
+                "empresa": "total_empresa",
+            }
+        )
+    )
+    for col in ("total_provincia", "total_cuenca", "total_empresa"):
+        if col not in pivot.columns:
+            pivot[col] = pd.NA
+
+    denom = pivot["total_provincia"].replace(0, pd.NA)
+    pivot["diff_cuenca_vs_provincia_pct"] = (
+        (pivot["total_cuenca"] - pivot["total_provincia"]) / denom * 100
+    )
+    pivot["diff_empresa_vs_provincia_pct"] = (
+        (pivot["total_empresa"] - pivot["total_provincia"]) / denom * 100
+    )
+    return pivot.sort_values(["producto", "periodo_str"]).reset_index(drop=True)
+
+
 def process_resource(
     resource_key: str,
     config: dict[str, Any],
