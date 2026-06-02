@@ -1,9 +1,18 @@
+import json
 from pathlib import Path
 from typing import Optional
 
+import geopandas as gpd
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
+
+PROCESSED_DIR = Path(__file__).resolve().parents[1] / "data" / "processed"
+GEOJSON_PETROLEO_PATH = PROCESSED_DIR / "cuencas_sedimentarias_sesco_petroleo.geojson"
+GEOJSON_GAS_PATH = PROCESSED_DIR / "cuencas_sedimentarias_sesco_gas.geojson"
+MATCH_REPORT_PATH = PROCESSED_DIR / "cuencas_sesco_match_report.csv"
+GEO_COVERAGE_SUMMARY_PATH = PROCESSED_DIR / "cuencas_sesco_geo_coverage_summary.csv"
 
 
 st.set_page_config(
@@ -43,7 +52,111 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     return df, latest_df, config_df
 
 
+@st.cache_data
+def load_geojson_cuencas(path_str: str) -> Optional[gpd.GeoDataFrame]:
+    path = Path(path_str)
+    if not path.is_file():
+        return None
+    return gpd.read_file(path)
+
+
+@st.cache_data
+def load_match_report() -> Optional[pd.DataFrame]:
+    if not MATCH_REPORT_PATH.is_file():
+        return None
+    return pd.read_csv(MATCH_REPORT_PATH)
+
+
+@st.cache_data
+def load_geo_coverage_summary() -> Optional[pd.DataFrame]:
+    if not GEO_COVERAGE_SUMMARY_PATH.is_file():
+        return None
+    return pd.read_csv(GEO_COVERAGE_SUMMARY_PATH)
+
+
+def build_cuenca_choropleth(
+    gdf_map: gpd.GeoDataFrame,
+    match_df: Optional[pd.DataFrame],
+    titulo: str,
+) -> go.Figure:
+    if "produccion" not in gdf_map.columns:
+        raise ValueError("El GeoJSON no incluye la columna 'produccion'.")
+
+    plot_df = gdf_map.copy()
+    plot_df["map_id"] = plot_df.index.astype(str)
+    plot_df["produccion_txt"] = plot_df["produccion"].apply(
+        lambda x: f"{x:,.2f}" if pd.notna(x) else "N/D"
+    )
+
+    if match_df is not None and "cuenca_geo" in match_df.columns:
+        eq_map = (
+            match_df.dropna(subset=["cuenca_geo", "equivalencia_usada"])
+            .drop_duplicates("cuenca_geo")
+            .set_index("cuenca_geo")["equivalencia_usada"]
+        )
+        plot_df["equivalencia_usada"] = plot_df["cuenca"].map(eq_map)
+    elif "equivalencia_usada" in plot_df.columns:
+        plot_df["equivalencia_usada"] = plot_df["equivalencia_usada"]
+    else:
+        plot_df["equivalencia_usada"] = pd.NA
+    plot_df["equivalencia_usada"] = plot_df["equivalencia_usada"].fillna("—")
+    plot_df["match_status"] = plot_df["match_status"].fillna("—")
+
+    geojson = json.loads(plot_df[["map_id", "geometry"]].to_json())
+    cols_plot = [
+        "map_id",
+        "cuenca",
+        "producto",
+        "periodo_str",
+        "produccion",
+        "produccion_txt",
+        "tipo",
+        "ubicacion",
+        "origen_geo",
+        "match_status",
+        "equivalencia_usada",
+    ]
+    plot_attrs = plot_df[[c for c in cols_plot if c in plot_df.columns]].copy()
+
+    fig = px.choropleth_map(
+        plot_attrs,
+        geojson=geojson,
+        locations="map_id",
+        featureidkey="properties.map_id",
+        color="produccion",
+        color_continuous_scale="YlOrRd",
+        map_style="open-street-map",
+        zoom=3.6,
+        center={"lat": -38.5, "lon": -64.0},
+        opacity=0.72,
+        title=titulo,
+        hover_name="cuenca",
+        hover_data={
+            "cuenca": False,
+            "producto": True,
+            "periodo_str": True,
+            "produccion_txt": True,
+            "tipo": True,
+            "ubicacion": True,
+            "origen_geo": True,
+            "match_status": True,
+            "equivalencia_usada": True,
+            "map_id": False,
+            "produccion": False,
+        },
+        labels={"produccion": "Producción prom. diaria"},
+    )
+    fig.update_layout(
+        height=560,
+        margin={"r": 0, "t": 56, "l": 0, "b": 0},
+        coloraxis_colorbar={"title": "Producción"},
+    )
+    return fig
+
+
 df, latest_df, config_df = load_data()
+match_report_df = load_match_report()
+geo_coverage_df = load_geo_coverage_summary()
 
 
 def get_latest_valid_period(producto: str, agrupador_tipo: str) -> Optional[pd.Timestamp]:
@@ -224,6 +337,89 @@ else:
         title=f"Top 5 de {agrupador_tipo} en los últimos 12 períodos válidos",
     )
     st.plotly_chart(fig_comp, use_container_width=True)
+
+st.divider()
+st.subheader("🗺️ Mapa por cuenca sedimentaria")
+
+producto_mapa = producto
+producto_mapa_label = "petróleo" if producto_mapa == "petroleo" else "gas"
+geojson_path = GEOJSON_PETROLEO_PATH if producto_mapa == "petroleo" else GEOJSON_GAS_PATH
+
+st.caption(
+    f"Producto del mapa: **{producto_mapa_label}** (mismo selector de la barra lateral). "
+    "Petróleo y gas usan capas y escalas independientes."
+)
+
+st.warning(
+    "Mapa exploratorio. La cobertura geográfica de cuencas SESCO es parcial. "
+    "Actualmente la capa consolidada cubre 10 de 17 cuencas SESCO. "
+    "Las cuencas sin geometría no se representan en el mapa."
+)
+
+gdf_cuencas = load_geojson_cuencas(str(geojson_path))
+if gdf_cuencas is None:
+    st.warning(f"No se encontró el GeoJSON esperado: `{geojson_path}`")
+else:
+    if "produccion" not in gdf_cuencas.columns:
+        st.error(
+            f"El archivo `{geojson_path.name}` no incluye la columna `produccion`. "
+            "Regenerar el GeoJSON desde la exploración geoespacial."
+        )
+    else:
+        periodo_mapa = (
+            gdf_cuencas["periodo_str"].dropna().iloc[0]
+            if gdf_cuencas["periodo_str"].notna().any()
+            else "N/D"
+        )
+        mapa_titulo = (
+            f"Producción de {producto_mapa_label} por cuenca sedimentaria — período {periodo_mapa}"
+        )
+        try:
+            fig_mapa = build_cuenca_choropleth(gdf_cuencas, match_report_df, mapa_titulo)
+            st.plotly_chart(fig_mapa, use_container_width=True)
+        except ValueError as exc:
+            st.error(str(exc))
+
+    if geo_coverage_df is not None and not geo_coverage_df.empty:
+        cov_cols = [
+            "producto",
+            "periodo_str",
+            "cuencas_sesco_total",
+            "cuencas_con_geometria",
+            "cuencas_sin_geometria",
+            "produccion_total_sesco",
+            "produccion_total_mapeada",
+            "porcentaje_produccion_mapeada",
+        ]
+        cov_slice = geo_coverage_df.loc[
+            geo_coverage_df["producto"] == producto_mapa, cov_cols
+        ]
+        if cov_slice.empty:
+            st.info(f"No hay fila de cobertura para el producto `{producto_mapa}` en el resumen.")
+        else:
+            st.markdown("**Resumen de cobertura geográfica**")
+            st.dataframe(cov_slice, use_container_width=True, hide_index=True)
+    elif geo_coverage_df is None:
+        st.info(
+            f"Resumen de cobertura no disponible (`{GEO_COVERAGE_SUMMARY_PATH.name}`)."
+        )
+
+    with st.expander("Ver reporte de match de cuencas"):
+        if match_report_df is None:
+            st.warning(f"No se encontró el reporte esperado: `{MATCH_REPORT_PATH}`")
+        else:
+            status_options = sorted(
+                match_report_df["match_status"].dropna().astype(str).unique().tolist()
+            )
+            destacar = st.multiselect(
+                "Destacar estados de match",
+                options=status_options,
+                default=status_options,
+            )
+            report_view = match_report_df.copy()
+            if destacar:
+                report_view = report_view[report_view["match_status"].isin(destacar)]
+            st.dataframe(report_view, use_container_width=True, hide_index=True)
 
 st.divider()
 st.subheader("Detalle de datos filtrados")
