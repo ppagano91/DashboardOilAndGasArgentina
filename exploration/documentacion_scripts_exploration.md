@@ -290,22 +290,72 @@ La configuración MVP vive en `run_mvp_processing.py` (`SESCO_RESOURCES_MVP`) y 
 
 ### `ProcessResult` (dataclass)
 
-Representa el **resultado completo** del pipeline para un recurso individual.
+Resultado **estructurado** del procesamiento de **un recurso SESCO** (por ejemplo petróleo por provincia). Permite tratar los 6 recursos MVP de forma homogénea: cada llamada a `process_resource` devuelve la misma forma, y `process_all_resources` acumula una `list[ProcessResult]` para concatenar y validar.
 
-| Atributo | Tipo | Descripción |
-|----------|------|-------------|
-| `resource_key` | `str` | Clave interna (ej. `petroleo_provincia`) |
-| `config` | `dict` | Configuración del recurso |
-| `df_model` | `pd.DataFrame` | Modelo sin preprocesamiento final |
-| `df_model_clean` | `pd.DataFrame` | Tras `preprocess_model_df` (incluye último período posiblemente incompleto) |
-| `df_model_clean_valid` | `pd.DataFrame` | Tras excluir período incompleto |
-| `periodo_info` | `dict` | Resultado de `detectar_periodo_incompleto` |
-| `validation` | `dict` | Resumen para `sesco_validaciones_resumen.csv` |
-| `raw_path` | `Path` | Ruta del CSV raw usado |
-| `export_path` | `Path` | Ruta del `{key}_model_clean.csv` |
-| `observaciones` | `list[str]` | Notas (descarga, período excluido, errores) |
+#### Qué representa y cuándo se crea
 
-**Uso:** `process_resource` la devuelve; `process_all_resources` acumula una lista para concatenar y generar validaciones. Permite inspeccionar etapas intermedias en notebooks sin re-ejecutar todo.
+| Aspecto | Detalle |
+|---------|---------|
+| **Qué es** | Contenedor de datos intermedios, metadatos, validación y paths de un recurso |
+| **Etapa del pipeline** | Final de `process_resource`, tras exportar CSV individual y resumen por período |
+| **Quién la devuelve** | `process_resource` |
+| **Quién la consume** | `process_all_resources` (lista → unificado + `sesco_validaciones_resumen.csv`); notebooks pueden inspeccionar `results[i].df_model_clean_valid` |
+
+#### Diferencia entre capas de datos
+
+| Capa | Atributo / artefacto | Contenido |
+|------|----------------------|-----------|
+| Raw | `raw_path` | CSV original en `data/raw/` |
+| Modelo intermedio | `df_model` | Columnas unificadas; puede tener nulos |
+| Limpio (pre-filtro período) | `df_model_clean` | Tipos normalizados; **puede** incluir último mes incompleto |
+| Limpio válido (exportable) | `df_model_clean_valid` | Sin último período incompleto si aplicó regla 50 % |
+| Resumen por período | archivo `*_periodos_resumen.csv` | No está en el dataclass; se escribe con `export_period_summary` |
+| Validación | `validation` | Dict de una fila para CSV de validaciones |
+| Metadatos de período | `period_info` | Dict con `valid_periods`, `latest_valid_period`, etc. |
+
+#### Tabla de atributos
+
+| Atributo | Tipo esperado | Obligatorio | Categoría | Descripción | Ejemplo conceptual | Uso posterior |
+|----------|---------------|-------------|-----------|-------------|-------------------|---------------|
+| `resource_key` | `str` | Sí | Metadato | Clave interna del recurso | `"gas_cuenca"` | Prefijo de archivos y fila de validación |
+| `config` | `dict[str, Any]` | Sí | Metadato | Config MVP (`producto`, `agrupador_tipo`, `nombre_recurso`) | `{"producto": "gas", ...}` | Trazabilidad; claves en español por contrato |
+| `df_model` | `pd.DataFrame` | Sí | Datos (intermedio) | Post-`build_model_df` | Filas con `producto`, `produccion`, … | Conteo de nulos; auditoría |
+| `df_model_clean` | `pd.DataFrame` | Sí | Datos (limpio) | Post-`preprocess_model_df` | Incluye o no último mes parcial | Entrada de `detect_incomplete_period` |
+| `df_model_clean_valid` | `pd.DataFrame` | Sí | Datos (final recurso) | Períodos válidos para análisis | Base del unificado | `export_model_clean`, concat en `process_all_resources` |
+| `period_info` | `dict[str, Any]` | Sí | Metadato | Salida de `detect_incomplete_period` | `{"valid_periods": [...], "excluded_period": "2026-01"}` | KPIs de último período válido |
+| `validation` | `dict[str, Any]` | Sí | Validación | Métricas del recurso | `cantidad_filas_limpias`, `observaciones` | `sesco_validaciones_resumen.csv` |
+| `raw_path` | `Path` | Sí | Path | CSV descargado | `.../raw/gas_cuenca.csv` | Reproducibilidad |
+| `export_path` | `Path` | Sí | Path | CSV limpio exportado | `.../gas_cuenca_model_clean.csv` | Consumo directo del recurso |
+| `notes` | `list[str]` | No (default `[]`) | Estado ejecución | Notas de descarga, exclusión, errores | `["descargado desde CKAN"]` | Se unen en `validation["observaciones"]` |
+
+**Homogeneidad entre recursos:** la misma estructura para los 6 MVP evita ramas especiales en `process_all_resources` y permite iterar `results` en notebooks con un contrato estable.
+
+---
+
+## Convención de nombres
+
+A partir de junio 2026, el código interno de `sesco_processing.py` usa **inglés** para funciones, parámetros, atributos de estructuras y variables locales. Se mantienen en **español**:
+
+- **Columnas del modelo analítico y CSV exportados** (`producto`, `agrupador_tipo`, `produccion`, etc.) — contrato con Streamlit y notebooks.
+- **Claves del dict de configuración MVP** (`producto`, `agrupador_tipo`, `nombre_recurso`) en `SESCO_RESOURCES_MVP`.
+- **Claves del dict `validation`** y columnas de `sesco_validaciones_resumen.csv`.
+- **Nombres de archivos generados** (`*_model_clean.csv`, `sesco_produccion_model_clean.csv`, etc.).
+- **Documentación** (`documentacion_scripts_exploration.md`, docstrings explicativos en español).
+
+| Concepto | Nombre anterior | Nombre nuevo | Motivo |
+|----------|-----------------|--------------|--------|
+| Detección período incompleto | `detectar_periodo_incompleto` | `detect_incomplete_period` | Unificación idioma (alias temporal conservado) |
+| Tipo de recurso CKAN | `infer_tipo_recurso` | `infer_resource_type` | Unificación idioma (alias temporal) |
+| Export resumen por período | `export_periodos_resumen` | `export_period_summary` | Unificación idioma (alias temporal) |
+| Metadatos de período en `ProcessResult` | `periodo_info` | `period_info` | Atributo interno en inglés |
+| Notas de ejecución en `ProcessResult` | `observaciones` | `notes` | Atributo interno en inglés |
+| Parámetro producto en funciones | `producto` | `product` | Variable interna; columna DF sigue `producto` |
+| Parámetro agrupador en funciones | `agrupador_tipo` | `grouping_type` | Variable interna; columna DF sigue `agrupador_tipo` |
+| Parámetro nombre CKAN | `nombre_recurso` | `resource_name` | Solo en `find_resource_by_name` |
+| Períodos aceptados (dict interno) | `periodos_validos` | `valid_periods` | Clave de `period_info`; `apply_valid_periods` acepta ambas |
+| Parámetro notas en validación | `observaciones` | `notes` | Parámetro interno; CSV sigue `observaciones` |
+
+**Aliases de compatibilidad** (final de `sesco_processing.py`): `detectar_periodo_incompleto`, `infer_tipo_recurso`, `export_periodos_resumen` apuntan a los nombres nuevos. Eliminar cuando las notebooks dejen de usar los nombres viejos.
 
 ---
 
@@ -334,7 +384,7 @@ Representa el **resultado completo** del pipeline para un recurso individual.
 #### `find_resource_by_name`
 
 - **Propósito:** Resolver un recurso CKAN a partir del nombre oficial o keywords.
-- **Entradas:** `resources_df`, `nombre_recurso`, `fallback_keywords` opcional.
+- **Entradas:** `resources_df`, `resource_name`, `fallback_keywords` opcional.
 - **Salida:** `pd.Series` del recurso elegido, o `None`.
 - **Lógica resumida:** Match exacto normalizado → si falla, match por keywords → prioriza CSV, nombre con "promedio", `last_modified` más reciente.
 - **Uso:** `process_resource` para cada recurso MVP.
@@ -394,7 +444,7 @@ Representa el **resultado completo** del pipeline para un recurso individual.
 - **Propósito:** Detectar columna del agrupador (`provincia`, `cuenca`, `empresa`).
 - **Lógica:** Substring del tipo en nombre de columna → primera categórica.
 
-#### `infer_tipo_recurso`
+#### `infer_resource_type` (alias: `infer_tipo_recurso`)
 
 - **Propósito:** Clasificar tipo de serie según nombre CKAN (`shale_tight`, `promedio_diario`, `serie_historica`).
 - **Uso:** Columna `tipo_recurso` del modelo.
@@ -433,7 +483,7 @@ Representa el **resultado completo** del pipeline para un recurso individual.
 
 ### Períodos incompletos
 
-#### `detectar_periodo_incompleto`
+#### `detect_incomplete_period` (alias: `detectar_periodo_incompleto`)
 
 - **Propósito:** Identificar si el **último período** del recurso parece carga parcial.
 - **Entradas:** `df_model_clean`, `threshold=0.5`, `verbose`.
@@ -554,7 +604,7 @@ Columnas intermedias **no exportadas:** `periodo`, `periodo_original` (solo dura
 | No comparar petróleo y gas como misma unidad | Filtro por `producto` en dashboard y análisis |
 | No convertir nulos a cero sin justificación | `preprocess_model_df` usa `dropna`, no `fillna(0)` |
 | Trazabilidad con `source_resource` | Propagado desde CKAN en `build_model_df` |
-| Período incompleto: caída abrupta del último mes | Regla 50 % en `detectar_periodo_incompleto` / `get_valid_periods_by_group` |
+| Período incompleto: caída abrupta del último mes | Regla 50 % en `detect_incomplete_period` / `get_valid_periods_by_group` |
 
 ---
 
@@ -577,7 +627,7 @@ Para cada serie (recurso individual o grupo producto+agrupador):
 
 | Función | Ámbito |
 |---------|--------|
-| `detectar_periodo_incompleto` | Un recurso (`process_resource`) |
+| `detect_incomplete_period` | Un recurso (`process_resource`) |
 | `get_valid_periods_by_group` | Subconjunto del unificado por producto y agrupador |
 
 ### Efecto en KPIs y gráficos
@@ -628,7 +678,7 @@ Validaciones de negocio sobre el unificado ya exportado: negativos, huecos de pe
 | `gas_cuenca_model_clean.csv` | idem | Gas por cuenca | idem |
 | `petroleo_empresa_model_clean.csv` | idem | Petróleo por empresa | idem |
 | `gas_empresa_model_clean.csv` | idem | Gas por empresa | idem |
-| `*_periodos_resumen.csv` | `export_periodos_resumen` | Totales por período por recurso | Control de series |
+| `*_periodos_resumen.csv` | `export_period_summary` | Totales por período por recurso | Control de series |
 | `sesco_produccion_model_clean.csv` | `export_unified` | Dataset unificado MVP | Streamlit, notebook 03 |
 | `sesco_validaciones_resumen.csv` | `export_unified` | Una fila por recurso procesado | Notebook 03, auditoría |
 | `sesco_latest_periods_by_view.csv` | Notebook 03 | Último período válido por vista | Streamlit KPIs |
@@ -643,7 +693,7 @@ Archivos geoespaciales (`cuencas_*.geojson`, etc.) provienen de `04_exploracion_
 
 | Notebook | Rol | Qué aportó al módulo / scripts |
 |----------|-----|--------------------------------|
-| `01_exploracion_sesco.ipynb` | Exploración inicial de un recurso (petróleo provincia) | CKAN, normalización, `detectar_periodo_incompleto`, visualizaciones sobre `df_model_clean_valid` |
+| `01_exploracion_sesco.ipynb` | Exploración inicial de un recurso (petróleo provincia) | CKAN, normalización, lógica de período incompleto (función local; hoy `detect_incomplete_period` en módulo) |
 | `02_modelo_unificado_sesco.ipynb` | Generalización a 6 recursos | Importa `sesco_processing`; `process_all_resources`, `export_unified`, `validate_unified_dataset`, `get_valid_periods_by_group`, `build_totals_comparison_table` |
 | `03_validacion_final_sesco.ipynb` | Validación pre-dashboard | Lee unificado; exporta `sesco_latest_periods_by_view.csv`, `sesco_dashboard_config.csv`, `sesco_totales_por_vista_resumen.csv` |
 | `04_exploracion_geoespacial_cuencas.ipynb` | Capas para mapa | Independiente del ETL tabular; consume períodos desde processed |
@@ -785,5 +835,5 @@ Esta documentación y los docstrings **no modifican** reglas de procesamiento, n
 3. Extraer `SESCO_RESOURCES_MVP` a un módulo `config.py` compartido con la notebook 02.
 4. Hacer que `run_mvp_processing.py` opcionalmente genere también los CSV de la notebook 03 (o un script `run_dashboard_exports.py`).
 5. Añadir `streamlit` a requirements del subproyecto exploration.
-6. Tests unitarios para `detectar_periodo_incompleto`, `normalize_column_names` y `find_resource_by_name`.
+6. Tests unitarios para `detect_incomplete_period`, `normalize_column_names` y `find_resource_by_name`.
 7. Flag `--force-download` para refrescar raw sin borrado manual.

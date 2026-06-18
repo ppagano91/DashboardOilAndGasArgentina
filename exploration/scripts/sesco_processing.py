@@ -99,33 +99,69 @@ DUPLICATE_KEY_COLUMNS = [
 @dataclass
 class ProcessResult:
     """
-    Resultado completo del pipeline para un recurso MVP individual.
+    Resultado estructurado del procesamiento de un recurso SESCO individual.
 
-    Agrupa DataFrames intermedios, metadatos de períodos y rutas de exportación
-    para inspección en notebooks o auditoría sin re-ejecutar transformaciones.
+    Agrupa en un único objeto los DataFrames intermedios, metadatos de períodos,
+    validaciones, rutas de archivos y notas de ejecución generados al procesar
+    un recurso MVP (por ejemplo petróleo por provincia, gas por cuenca).
+
+    Se crea al final de ``process_resource`` (una instancia por recurso) y se
+    acumula en una lista dentro de ``process_all_resources`` para unificar
+    resultados y armar ``sesco_validaciones_resumen.csv``.
+
+  Diferencia entre capas de datos
+    - ``df_model``: modelo analítico recién construido; puede tener nulos y
+      períodos sin parsear del todo.
+    - ``df_model_clean``: tras ``preprocess_model_df``; tipos normalizados y
+      filas sin claves nulas; **puede** incluir el último período incompleto.
+    - ``df_model_clean_valid``: tras ``apply_valid_periods``; excluye el último
+      mes si la regla del 50 % lo marcó incompleto; **base de los CSV exportados**.
+    - ``validation``: diccionario resumen (una fila de validación), no un
+      DataFrame de producción.
+    - Los resúmenes por período (``*_periodos_resumen.csv``) se escriben en
+      disco vía ``export_period_summary``; no forman parte de este dataclass.
 
     Attributes
     ----------
     resource_key : str
-        Clave interna (ej. ``petroleo_provincia``).
-    config : dict
-        Configuración del recurso (producto, agrupador_tipo, nombre_recurso).
+        Obligatorio. Identificador interno del recurso (ej. ``"petroleo_provincia"``).
+        Tipo: metadato / clave de configuración. Ejemplo: ``"gas_empresa"``.
+        Uso: prefijo de archivos exportados y filas de validación.
+    config : dict[str, Any]
+        Obligatorio. Configuración MVP del recurso (claves en español por
+        contrato: ``producto``, ``agrupador_tipo``, ``nombre_recurso``).
+        Tipo: metadato. Ejemplo: ``{"producto": "gas", "agrupador_tipo": "cuenca", ...}``.
+        Uso: trazabilidad y ``validate_resource_basic``.
     df_model : pd.DataFrame
-        Modelo analítico antes del preprocesamiento final.
+        Obligatorio. Modelo intermedio post-``build_model_df``, pre-limpieza final.
+        Tipo: datos (intermedio). Columnas del modelo en español (``producto``, etc.).
+        Uso: auditoría de filas originales y conteo de nulos en producción.
     df_model_clean : pd.DataFrame
-        Tras ``preprocess_model_df``; puede incluir último período incompleto.
+        Obligatorio. Salida de ``preprocess_model_df`` con ``periodo_dt`` y tipos listos.
+        Tipo: datos (limpios, posible último período incompleto).
+        Uso: entrada de ``detect_incomplete_period``; inspección en notebooks.
     df_model_clean_valid : pd.DataFrame
-        Períodos válidos tras aplicar la regla del 50 %; base de los exports.
-    periodo_info : dict
-        Salida de ``detectar_periodo_incompleto``.
-    validation : dict
-        Fila de resumen para ``sesco_validaciones_resumen.csv``.
+        Obligatorio. Subconjunto con períodos válidos para análisis y export.
+        Tipo: datos (finales del recurso). Uso: ``export_model_clean``, unificado.
+    period_info : dict[str, Any]
+        Obligatorio. Metadatos de períodos (salida de ``detect_incomplete_period``).
+        Tipo: metadato. Claves: ``latest_period``, ``latest_valid_period``,
+        ``excluded_period``, ``ratio``, ``valid_periods``.
+        Uso: ``apply_valid_periods``, ``validate_resource_basic``.
+    validation : dict[str, Any]
+        Obligatorio. Fila de métricas para ``sesco_validaciones_resumen.csv``.
+        Tipo: validación. Claves en español (``cantidad_filas_limpias``, etc.).
+        Uso: concatenación en ``process_all_resources``.
     raw_path : Path
-        CSV descargado en ``data/raw/``.
+        Obligatorio. Ruta del CSV descargado en ``data/raw/``.
+        Tipo: path / estado de ejecución.
     export_path : Path
-        CSV limpio ``{resource_key}_model_clean.csv``.
-    observaciones : list[str]
-        Notas de descarga, exclusión de período o errores.
+        Obligatorio. Ruta del ``{resource_key}_model_clean.csv`` generado.
+        Tipo: path / estado de ejecución.
+    notes : list[str]
+        Opcional (default lista vacía). Notas de ejecución: descarga CKAN,
+        período excluido, errores capturados.
+        Tipo: estado de ejecución. Se serializa en ``validation["observaciones"]``.
     """
 
     resource_key: str
@@ -133,11 +169,11 @@ class ProcessResult:
     df_model: pd.DataFrame
     df_model_clean: pd.DataFrame
     df_model_clean_valid: pd.DataFrame
-    periodo_info: dict[str, Any]
+    period_info: dict[str, Any]
     validation: dict[str, Any]
     raw_path: Path
     export_path: Path
-    observaciones: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
 def normalize_text(value: str) -> str:
@@ -228,7 +264,7 @@ def list_resources(package: dict | None = None) -> pd.DataFrame:
 
 def find_resource_by_name(
     resources_df: pd.DataFrame,
-    nombre_recurso: str,
+    resource_name: str,
     *,
     fallback_keywords: list[str] | None = None,
 ) -> pd.Series | None:
@@ -239,7 +275,7 @@ def find_resource_by_name(
     ----------
     resources_df : pd.DataFrame
         Tabla de recursos CKAN (salida de ``list_resources``).
-    nombre_recurso : str
+    resource_name : str
         Nombre oficial esperado del recurso.
     fallback_keywords : list[str], optional
         Si no hay match exacto, exige que todas las keywords aparezcan en el nombre.
@@ -254,7 +290,7 @@ def find_resource_by_name(
     Ante múltiples coincidencias prioriza: formato CSV, nombre con "promedio",
   y ``last_modified`` más reciente. Evita depender de URLs fijas en código.
     """
-    target = normalize_text(nombre_recurso)
+    target = normalize_text(resource_name)
     matches: list[pd.Series] = []
 
     for _, row in resources_df.iterrows():
@@ -459,7 +495,7 @@ def detect_period_column(columns: list[str] | pd.Index) -> str | None:
     return None
 
 
-def find_production_column(df_norm: pd.DataFrame, producto: str) -> str | None:
+def find_production_column(df_norm: pd.DataFrame, product: str) -> str | None:
     """
     Detecta la columna de producción según el producto (petróleo o gas).
 
@@ -467,8 +503,8 @@ def find_production_column(df_norm: pd.DataFrame, producto: str) -> str | None:
     ----------
     df_norm : pd.DataFrame
         DataFrame con columnas normalizadas.
-    producto : str
-        ``"petroleo"`` o ``"gas"``.
+    product : str
+        ``"petroleo"`` o ``"gas"`` (valor de la columna exportada ``producto``).
 
     Returns
     -------
@@ -476,7 +512,7 @@ def find_production_column(df_norm: pd.DataFrame, producto: str) -> str | None:
         Nombre de columna detectada, o ``None`` si no hay candidato confiable.
     """
     columns = list(df_norm.columns)
-    product_tokens = ("petroleo", "petr") if producto == "petroleo" else ("gas",)
+    product_tokens = ("petroleo", "petr") if product == "petroleo" else ("gas",)
 
     for col in columns:
         norm = normalize_text(col)
@@ -493,7 +529,7 @@ def find_production_column(df_norm: pd.DataFrame, producto: str) -> str | None:
     return candidates[0] if candidates else None
 
 
-def find_group_column(df_norm: pd.DataFrame, agrupador_tipo: str) -> str | None:
+def find_group_column(df_norm: pd.DataFrame, grouping_type: str) -> str | None:
     """
     Detecta la columna del agrupador (provincia, cuenca o empresa).
 
@@ -501,7 +537,7 @@ def find_group_column(df_norm: pd.DataFrame, agrupador_tipo: str) -> str | None:
     ----------
     df_norm : pd.DataFrame
         DataFrame con columnas normalizadas.
-    agrupador_tipo : str
+    grouping_type : str
         Tipo de vista: ``"provincia"``, ``"cuenca"`` o ``"empresa"``.
 
     Returns
@@ -510,13 +546,13 @@ def find_group_column(df_norm: pd.DataFrame, agrupador_tipo: str) -> str | None:
         Nombre de columna que contiene el agrupador.
     """
     for col in df_norm.columns:
-        if agrupador_tipo in col:
+        if grouping_type in col:
             return col
     cat_cols = detect_categorical_columns(df_norm)
     return cat_cols[0] if cat_cols else None
 
 
-def infer_tipo_recurso(name: str) -> str | None:
+def infer_resource_type(name: str) -> str | None:
     """
     Clasifica el tipo de serie según palabras clave en el nombre CKAN.
 
@@ -538,10 +574,10 @@ def infer_tipo_recurso(name: str) -> str | None:
 def build_model_df(
     df_norm: pd.DataFrame,
     *,
-    producto: str,
-    agrupador_tipo: str,
+    product: str,
+    grouping_type: str,
     source_resource: str,
-    tipo_recurso: str | None = None,
+    resource_type: str | None = None,
 ) -> pd.DataFrame:
     """
     Construye el DataFrame con esquema analítico común a los 6 recursos MVP.
@@ -550,39 +586,39 @@ def build_model_df(
     ----------
     df_norm : pd.DataFrame
         CSV normalizado (columnas en snake_case).
-    producto : str
-        ``"petroleo"`` o ``"gas"``.
-    agrupador_tipo : str
-        ``"provincia"``, ``"cuenca"`` o ``"empresa"``.
+    product : str
+        ``"petroleo"`` o ``"gas"`` (se asigna a la columna exportada ``producto``).
+    grouping_type : str
+        ``"provincia"``, ``"cuenca"`` o ``"empresa"`` (columna ``agrupador_tipo``).
     source_resource : str
         Nombre oficial del recurso CKAN (trazabilidad).
-    tipo_recurso : str, optional
+    resource_type : str, optional
         Clasificación de la serie; si es ``None``, se infiere del nombre.
 
     Returns
     -------
     pd.DataFrame
-        Modelo intermedio con columnas semánticas unificadas.
+        Modelo intermedio con columnas semánticas unificadas (nombres en español).
 
     Notes
     -----
     Provincia, cuenca y empresa son vistas alternativas del mismo fenómeno;
     cada llamada corresponde a un único CSV fuente y un único ``agrupador_tipo``.
     """
-    if tipo_recurso is None:
-        tipo_recurso = infer_tipo_recurso(source_resource) or "promedio_diario"
+    if resource_type is None:
+        resource_type = infer_resource_type(source_resource) or "promedio_diario"
 
-    prod_col = find_production_column(df_norm, producto)
-    group_col = find_group_column(df_norm, agrupador_tipo)
+    prod_col = find_production_column(df_norm, product)
+    group_col = find_group_column(df_norm, grouping_type)
     period_col = detect_period_column(df_norm.columns)
 
     if prod_col is None:
         raise ValueError(
-            f"No se detectó columna de producción para {producto} en {list(df_norm.columns)}"
+            f"No se detectó columna de producción para {product} en {list(df_norm.columns)}"
         )
     if group_col is None:
         raise ValueError(
-            f"No se detectó columna de agrupador '{agrupador_tipo}' en {list(df_norm.columns)}"
+            f"No se detectó columna de agrupador '{grouping_type}' en {list(df_norm.columns)}"
         )
 
     df_model = pd.DataFrame()
@@ -599,10 +635,10 @@ def build_model_df(
         df_model["anio"] = None
     df_model["mes"] = df_norm["mes"] if "mes" in df_norm.columns else None
 
-    df_model["producto"] = producto
-    df_model["agrupador_tipo"] = agrupador_tipo
+    df_model["producto"] = product
+    df_model["agrupador_tipo"] = grouping_type
     df_model["agrupador_nombre"] = df_norm[group_col]
-    df_model["tipo_recurso"] = tipo_recurso
+    df_model["tipo_recurso"] = resource_type
     df_model["produccion"] = df_norm[prod_col]
     df_model["source_resource"] = source_resource
 
@@ -628,7 +664,7 @@ def preprocess_model_df(df_model: pd.DataFrame) -> pd.DataFrame:
     -----
     No convierte nulos de producción a cero: los descarta con ``dropna``.
     El período incompleto del último mes se trata después en
-    ``detectar_periodo_incompleto``.
+    ``detect_incomplete_period``.
     """
     df = df_model.copy()
 
@@ -673,7 +709,7 @@ def preprocess_model_df(df_model: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def detectar_periodo_incompleto(
+def detect_incomplete_period(
     df_model_clean: pd.DataFrame,
     threshold: float = 0.5,
     *,
@@ -696,7 +732,7 @@ def detectar_periodo_incompleto(
     -------
     dict
         ``latest_period``, ``latest_valid_period``, ``excluded_period``, ``ratio``,
-        ``periodos_validos`` (lista de ``periodo_dt`` aceptados).
+        ``valid_periods`` (lista de ``periodo_dt`` aceptados).
 
     Notes
     -----
@@ -715,18 +751,18 @@ def detectar_periodo_incompleto(
     latest_valid_period = latest_period
     excluded_period = None
     ratio = None
-    periodos_validos = agg["periodo_dt"].tolist()
+    valid_periods = agg["periodo_dt"].tolist()
 
     if len(agg) >= 2:
-        ultimo_valor = agg.iloc[-1]["produccion"]
-        penultimo_valor = agg.iloc[-2]["produccion"]
-        ratio = ultimo_valor / penultimo_valor if penultimo_valor else 1.0
+        latest_total = agg.iloc[-1]["produccion"]
+        previous_total = agg.iloc[-2]["produccion"]
+        ratio = latest_total / previous_total if previous_total else 1.0
 
         # Caída abrupta: típico de mes en curso con pocos días reportados.
         if ratio < threshold:
             excluded_period = latest_period
             latest_valid_period = agg.iloc[-2]["periodo_str"]
-            periodos_validos = agg.iloc[:-1]["periodo_dt"].tolist()
+            valid_periods = agg.iloc[:-1]["periodo_dt"].tolist()
             if verbose:
                 print(
                     f"Advertencia: se excluye {excluded_period} porque parece incompleto. "
@@ -738,12 +774,12 @@ def detectar_periodo_incompleto(
         "latest_valid_period": latest_valid_period,
         "excluded_period": excluded_period,
         "ratio": ratio,
-        "periodos_validos": periodos_validos,
+        "valid_periods": valid_periods,
     }
 
 
 def apply_valid_periods(
-    df_model_clean: pd.DataFrame, periodo_info: dict[str, Any]
+    df_model_clean: pd.DataFrame, period_info: dict[str, Any]
 ) -> pd.DataFrame:
     """
     Filtra filas a los períodos considerados válidos tras la regla del 50 %.
@@ -752,16 +788,17 @@ def apply_valid_periods(
     ----------
     df_model_clean : pd.DataFrame
         Datos limpios que pueden incluir el último período incompleto.
-    periodo_info : dict
-        Salida de ``detectar_periodo_incompleto`` (clave ``periodos_validos``).
+    period_info : dict
+        Salida de ``detect_incomplete_period`` (clave ``valid_periods``).
 
     Returns
     -------
     pd.DataFrame
         Subconjunto exportable y apto para análisis/KPIs.
     """
+    valid_periods = period_info.get("valid_periods") or period_info.get("periodos_validos", [])
     return df_model_clean[
-        df_model_clean["periodo_dt"].isin(periodo_info["periodos_validos"])
+        df_model_clean["periodo_dt"].isin(valid_periods)
     ].copy()
 
 
@@ -770,8 +807,8 @@ def validate_resource_basic(
     config: dict[str, Any],
     df_model: pd.DataFrame,
     df_model_clean_valid: pd.DataFrame,
-    periodo_info: dict[str, Any],
-    observaciones: list[str] | None = None,
+    period_info: dict[str, Any],
+    notes: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Genera una fila de resumen de validación para un recurso procesado.
@@ -781,22 +818,22 @@ def validate_resource_basic(
     resource_key : str
         Clave interna del recurso.
     config : dict
-        Configuración MVP del recurso.
+        Configuración MVP del recurso (claves ``producto``, ``agrupador_tipo``, etc.).
     df_model : pd.DataFrame
         Modelo original (antes de filtrar períodos incompletos).
     df_model_clean_valid : pd.DataFrame
         Datos exportables.
-    periodo_info : dict
+    period_info : dict
         Metadatos de períodos válidos.
-    observaciones : list[str], optional
+    notes : list[str], optional
         Notas acumuladas (descarga, exclusión de período, etc.).
 
     Returns
     -------
     dict
-        Métricas para una fila de ``sesco_validaciones_resumen.csv``.
+        Métricas para una fila de ``sesco_validaciones_resumen.csv`` (claves en español).
     """
-    obs = "; ".join(observaciones) if observaciones else ""
+    obs = "; ".join(notes) if notes else ""
 
     return {
         "resource_key": resource_key,
@@ -807,9 +844,9 @@ def validate_resource_basic(
         "periodo_min": df_model_clean_valid["periodo_str"].min()
         if len(df_model_clean_valid)
         else None,
-        "periodo_max_disponible": periodo_info.get("latest_period"),
-        "latest_valid_period": periodo_info.get("latest_valid_period"),
-        "excluded_period": periodo_info.get("excluded_period") or "",
+        "periodo_max_disponible": period_info.get("latest_period"),
+        "latest_valid_period": period_info.get("latest_valid_period"),
+        "excluded_period": period_info.get("excluded_period") or "",
         "cantidad_agrupadores": df_model_clean_valid["agrupador_nombre"].nunique()
         if len(df_model_clean_valid)
         else 0,
@@ -872,7 +909,7 @@ def export_model_clean(
     return path
 
 
-def export_periodos_resumen(
+def export_period_summary(
     df_model_clean_valid: pd.DataFrame,
     resource_key: str,
     processed_dir: Path | None = None,
@@ -895,7 +932,7 @@ def export_periodos_resumen(
         Ruta a ``{resource_key}_periodos_resumen.csv``.
     """
     processed_dir = processed_dir or PROCESSED_DIR
-    resumen = (
+    summary = (
         df_model_clean_valid.groupby("periodo_str", as_index=False)
         .agg(
             produccion_total=("produccion", "sum"),
@@ -904,7 +941,7 @@ def export_periodos_resumen(
         .sort_values("periodo_str")
     )
     path = processed_dir / f"{resource_key}_periodos_resumen.csv"
-    resumen.to_csv(path, encoding="utf-8-sig", index=False)
+    summary.to_csv(path, encoding="utf-8-sig", index=False)
     return path
 
 
@@ -915,8 +952,8 @@ def format_number(value: float, decimals: int = 0) -> str:
 
 def get_valid_periods_by_group(
     df: pd.DataFrame,
-    producto: str,
-    agrupador_tipo: str,
+    product: str,
+    grouping_type: str,
     threshold: float = 0.5,
     *,
     verbose: bool = False,
@@ -924,17 +961,17 @@ def get_valid_periods_by_group(
     """
     Calcula períodos válidos para una vista del dataset unificado.
 
-    Aplica la misma regla del 50 % que ``detectar_periodo_incompleto``, pero
+    Aplica la misma regla del 50 % que ``detect_incomplete_period``, pero
     sobre el subconjunto ``producto`` + ``agrupador_tipo`` del unificado.
 
     Parameters
     ----------
     df : pd.DataFrame
         Dataset unificado (``sesco_produccion_model_clean``).
-    producto : str
-        ``"petroleo"`` o ``"gas"``.
-    agrupador_tipo : str
-        ``"provincia"``, ``"cuenca"`` o ``"empresa"``.
+    product : str
+        ``"petroleo"`` o ``"gas"`` (valor de columna ``producto``).
+    grouping_type : str
+        ``"provincia"``, ``"cuenca"`` o ``"empresa"`` (columna ``agrupador_tipo``).
     threshold : float
         Umbral último/penúltimo (default 0.5).
     verbose : bool
@@ -943,7 +980,7 @@ def get_valid_periods_by_group(
     Returns
     -------
     dict
-        Metadatos de períodos, incluyendo ``producto`` y ``agrupador_tipo``.
+        Metadatos de períodos, incluyendo ``product`` y ``grouping_type``.
 
     Notes
     -----
@@ -952,17 +989,17 @@ def get_valid_periods_by_group(
     ``sesco_latest_periods_by_view.csv`` generado en notebook 03.
     """
     sub = df[
-        (df["producto"] == producto) & (df["agrupador_tipo"] == agrupador_tipo)
+        (df["producto"] == product) & (df["agrupador_tipo"] == grouping_type)
     ].copy()
     if sub.empty:
         return {
-            "producto": producto,
-            "agrupador_tipo": agrupador_tipo,
+            "product": product,
+            "grouping_type": grouping_type,
             "latest_period": None,
             "latest_valid_period": None,
             "excluded_period": None,
             "ratio": None,
-            "periodos_validos": [],
+            "valid_periods": [],
         }
 
     agg = (
@@ -974,31 +1011,31 @@ def get_valid_periods_by_group(
     latest_valid_period = latest_period
     excluded_period = None
     ratio = None
-    periodos_validos = agg["periodo_dt"].tolist()
+    valid_periods = agg["periodo_dt"].tolist()
 
     if len(agg) >= 2:
-        ultimo_valor = agg.iloc[-1]["produccion"]
-        penultimo_valor = agg.iloc[-2]["produccion"]
-        ratio = ultimo_valor / penultimo_valor if penultimo_valor else 1.0
-        # Misma regla del 50 % que detectar_periodo_incompleto, por vista del unificado.
+        latest_total = agg.iloc[-1]["produccion"]
+        previous_total = agg.iloc[-2]["produccion"]
+        ratio = latest_total / previous_total if previous_total else 1.0
+        # Misma regla del 50 % que detect_incomplete_period, por vista del unificado.
         if ratio < threshold:
             excluded_period = latest_period
             latest_valid_period = agg.iloc[-2]["periodo_str"]
-            periodos_validos = agg.iloc[:-1]["periodo_dt"].tolist()
+            valid_periods = agg.iloc[:-1]["periodo_dt"].tolist()
             if verbose:
                 print(
-                    f"[{producto}/{agrupador_tipo}] se excluye {excluded_period} "
+                    f"[{product}/{grouping_type}] se excluye {excluded_period} "
                     f"({ratio * 100:.1f}% vs período anterior)"
                 )
 
     return {
-        "producto": producto,
-        "agrupador_tipo": agrupador_tipo,
+        "product": product,
+        "grouping_type": grouping_type,
         "latest_period": latest_period,
         "latest_valid_period": latest_valid_period,
         "excluded_period": excluded_period,
         "ratio": ratio,
-        "periodos_validos": periodos_validos,
+        "valid_periods": valid_periods,
     }
 
 
@@ -1085,7 +1122,7 @@ def process_resource(
     processed_dir : Path, optional
         Directorio de salida procesada.
     incomplete_threshold : float
-        Umbral para ``detectar_periodo_incompleto``.
+        Umbral para ``detect_incomplete_period``.
     download_if_missing : bool
         Si es ``True``, descarga desde CKAN cuando falta el raw local.
     verbose : bool
@@ -1103,7 +1140,7 @@ def process_resource(
     """
     raw_dir = raw_dir or RAW_DIR
     processed_dir = processed_dir or PROCESSED_DIR
-    observaciones: list[str] = []
+    notes: list[str] = []
 
     fallback_kw = [config["producto"], config["agrupador_tipo"]]
     resource = find_resource_by_name(
@@ -1123,7 +1160,7 @@ def process_resource(
 
     if download_if_missing and not raw_path.exists():
         download_csv(url, raw_path)
-        observaciones.append("descargado desde CKAN")
+        notes.append("descargado desde CKAN")
     elif not raw_path.exists():
         raise FileNotFoundError(f"CSV no encontrado: {raw_path}")
 
@@ -1143,33 +1180,33 @@ def process_resource(
 
     df_model = build_model_df(
         df_norm,
-        producto=config["producto"],
-        agrupador_tipo=config["agrupador_tipo"],
+        product=config["producto"],
+        grouping_type=config["agrupador_tipo"],
         source_resource=source_name,
     )
 
     df_model_clean = preprocess_model_df(df_model)
     # Regla del 50 %: puede marcar el último mes como incompleto a nivel recurso.
-    periodo_info = detectar_periodo_incompleto(
+    period_info = detect_incomplete_period(
         df_model_clean, threshold=incomplete_threshold, verbose=verbose
     )
-    df_valid = apply_valid_periods(df_model_clean, periodo_info)
+    df_valid = apply_valid_periods(df_model_clean, period_info)
 
-    if periodo_info.get("excluded_period"):
-        observaciones.append(
-            f"excluido periodo {periodo_info['excluded_period']}"
+    if period_info.get("excluded_period"):
+        notes.append(
+            f"excluido periodo {period_info['excluded_period']}"
         )
 
     export_path = export_model_clean(df_valid, resource_key, processed_dir)
-    export_periodos_resumen(df_valid, resource_key, processed_dir)
+    export_period_summary(df_valid, resource_key, processed_dir)
 
     validation = validate_resource_basic(
         resource_key,
         config,
         df_model,
         df_valid,
-        periodo_info,
-        observaciones=observaciones,
+        period_info,
+        notes=notes,
     )
 
     if verbose:
@@ -1185,11 +1222,11 @@ def process_resource(
         df_model=df_model,
         df_model_clean=df_model_clean,
         df_model_clean_valid=df_valid,
-        periodo_info=periodo_info,
+        period_info=period_info,
         validation=validation,
         raw_path=raw_path,
         export_path=export_path,
-        observaciones=observaciones,
+        notes=notes,
     )
 
 
@@ -1249,7 +1286,7 @@ def process_all_resources(
                     df_model=pd.DataFrame(),
                     df_model_clean=pd.DataFrame(),
                     df_model_clean_valid=pd.DataFrame(),
-                    periodo_info={},
+                    period_info={},
                     validation={
                         "resource_key": resource_key,
                         "producto": config["producto"],
@@ -1267,7 +1304,7 @@ def process_all_resources(
                     },
                     raw_path=RAW_DIR / f"{resource_key}.csv",
                     export_path=PROCESSED_DIR / f"{resource_key}_model_clean.csv",
-                    observaciones=[str(exc)],
+                    notes=[str(exc)],
                 )
             )
 
@@ -1366,3 +1403,11 @@ def export_unified(
     exportable.to_csv(unified_path, encoding="utf-8-sig", index=False)
     df_validaciones.to_csv(valid_path, encoding="utf-8-sig", index=False)
     return unified_path, valid_path
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible aliases (Spanish names). Remove after notebooks migrate.
+# ---------------------------------------------------------------------------
+detectar_periodo_incompleto = detect_incomplete_period
+infer_tipo_recurso = infer_resource_type
+export_periodos_resumen = export_period_summary
