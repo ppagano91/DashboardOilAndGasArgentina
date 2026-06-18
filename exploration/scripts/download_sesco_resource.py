@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
 """
-Descarga un recurso CSV del dataset SESCO por URL.
+Descarga un recurso CSV del dataset SESCO por URL directa.
 
-Uso:
+Herramienta auxiliar para pruebas puntuales; no ejecuta normalización ni
+construcción del modelo común. Los archivos se guardan en
+``exploration/data/raw/``.
+
+Uso::
+
     python exploration/scripts/download_sesco_resource.py <url> [nombre_archivo.csv]
+
+Notes
+-----
+A diferencia de ``sesco_processing.download_csv``, siempre sobrescribe el
+destino si se repite la descarga con el mismo nombre.
 """
 
 from __future__ import annotations

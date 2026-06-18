@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
-"""Procesa los 6 recursos MVP SESCO desde línea de comandos."""
+"""
+Procesa los 6 recursos MVP SESCO desde línea de comandos.
 
+Alternativa scriptable a la notebook ``02_modelo_unificado_sesco.ipynb`` para
+regenerar ``sesco_produccion_model_clean.csv`` y validaciones por recurso.
+
+Uso (desde la raíz del repo)::
+
+    python exploration/scripts/run_mvp_processing.py
+
+Notes
+-----
+No genera ``sesco_latest_periods_by_view.csv`` ni otros auxiliares del
+dashboard; ejecutar después la notebook ``03_validacion_final_sesco.ipynb``.
+"""
 from __future__ import annotations
 
 import sys

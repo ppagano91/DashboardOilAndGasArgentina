@@ -2,10 +2,13 @@
 """
 Consulta la API CKAN de datos.gob.ar y lista los recursos del dataset SESCO.
 
-Uso:
+Genera un inventario local en ``exploration/data/processed/ckan_resources.csv``
+para auditar fuentes sin depender de URLs fijas en código.
+
+Uso (desde la raíz del repo)::
+
     python exploration/scripts/inspect_ckan_resources.py
 """
-
 from __future__ import annotations
 
 import csv

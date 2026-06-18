@@ -1,7 +1,22 @@
 """
-Procesamiento reutilizable de recursos SESCO (CKAN → modelo analítico → CSV limpio).
+Pipeline ETL exploratorio para datos de producción SESCO (datos.gob.ar).
 
-Extraído de exploration/notebooks/01_exploracion_sesco.ipynb para los 6 recursos MVP.
+Concentra la lógica reutilizable extraída de ``01_exploracion_sesco.ipynb`` y
+generalizada en ``02_modelo_unificado_sesco.ipynb``. Procesa los 6 recursos MVP
+(provincia / cuenca / empresa × petróleo / gas): consulta CKAN, descarga CSV,
+normaliza columnas heterogéneas, construye un modelo analítico común, detecta
+períodos incompletos y exporta archivos en ``exploration/data/processed/``.
+
+Esta etapa precede a una arquitectura formal con PostgreSQL/PostGIS; varias
+funciones de este módulo son candidatas a migrar a un ETL de producción.
+
+Notes
+-----
+- Provincia, cuenca y empresa son vistas alternativas: no deben sumarse entre sí.
+- El último período válido se calcula por recurso o por ``producto`` +
+  ``agrupador_tipo``, nunca como máximo global del dataset.
+- Petróleo y gas conservan unidades distintas; el modelo los separa por columna
+  ``producto``.
 """
 
 from __future__ import annotations
@@ -19,10 +34,12 @@ from urllib.parse import unquote, urlparse
 
 import pandas as pd
 
+# Identificador oficial del dataset en datos.gob.ar (único punto de verdad CKAN).
 PACKAGE_ID = "energia-produccion-petroleo-gas-sesco"
 CKAN_URL = f"https://datos.gob.ar/api/3/action/package_show?id={PACKAGE_ID}"
 USER_AGENT = "OilGas-Exploration/1.0"
 
+# Rutas relativas al módulo: independientes del directorio de trabajo al ejecutar CLI.
 SCRIPT_DIR = Path(__file__).resolve().parent
 EXPLORATION_DIR = SCRIPT_DIR.parent
 RAW_DIR = EXPLORATION_DIR / "data" / "raw"
@@ -38,6 +55,7 @@ RESOURCE_FIELDS = [
     "size",
 ]
 
+# Columnas mínimas que debe tener df_model antes de preprocess_model_df.
 REQUIRED_MODEL_COLUMNS = [
     "periodo",
     "produccion",
@@ -46,6 +64,7 @@ REQUIRED_MODEL_COLUMNS = [
     "agrupador_tipo",
 ]
 
+# Esquema estable del CSV final consumido por el unificado y Streamlit.
 EXPORT_COLUMNS = [
     "periodo_str",
     "periodo_dt",
@@ -59,6 +78,7 @@ EXPORT_COLUMNS = [
     "source_resource",
 ]
 
+# Orden de preferencia al detectar la columna de período en CSV SESCO heterogéneos.
 PERIOD_COLUMN_PRIORITY = (
     "indice_tiempo",
     "periodo",
@@ -66,6 +86,7 @@ PERIOD_COLUMN_PRIORITY = (
     "anio_mes",
 )
 
+# Clave lógica para detectar duplicados en el dataset unificado.
 DUPLICATE_KEY_COLUMNS = [
     "periodo_str",
     "producto",
@@ -77,7 +98,35 @@ DUPLICATE_KEY_COLUMNS = [
 
 @dataclass
 class ProcessResult:
-    """Resultado del pipeline para un recurso MVP."""
+    """
+    Resultado completo del pipeline para un recurso MVP individual.
+
+    Agrupa DataFrames intermedios, metadatos de períodos y rutas de exportación
+    para inspección en notebooks o auditoría sin re-ejecutar transformaciones.
+
+    Attributes
+    ----------
+    resource_key : str
+        Clave interna (ej. ``petroleo_provincia``).
+    config : dict
+        Configuración del recurso (producto, agrupador_tipo, nombre_recurso).
+    df_model : pd.DataFrame
+        Modelo analítico antes del preprocesamiento final.
+    df_model_clean : pd.DataFrame
+        Tras ``preprocess_model_df``; puede incluir último período incompleto.
+    df_model_clean_valid : pd.DataFrame
+        Períodos válidos tras aplicar la regla del 50 %; base de los exports.
+    periodo_info : dict
+        Salida de ``detectar_periodo_incompleto``.
+    validation : dict
+        Fila de resumen para ``sesco_validaciones_resumen.csv``.
+    raw_path : Path
+        CSV descargado en ``data/raw/``.
+    export_path : Path
+        CSV limpio ``{resource_key}_model_clean.csv``.
+    observaciones : list[str]
+        Notas de descarga, exclusión de período o errores.
+    """
 
     resource_key: str
     config: dict[str, Any]
@@ -92,14 +141,46 @@ class ProcessResult:
 
 
 def normalize_text(value: str) -> str:
-    """Minúsculas sin acentos para comparar nombres de recursos/columnas."""
+    """
+    Normaliza texto para comparaciones insensibles a acentos y mayúsculas.
+
+    Parameters
+    ----------
+    value : str
+        Texto a normalizar (nombre CKAN, columna, etc.).
+
+    Returns
+    -------
+    str
+        Texto en minúsculas sin diacríticos, recortado.
+    """
     text = unicodedata.normalize("NFKD", str(value))
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     return text.lower().strip()
 
 
 def fetch_ckan_package(timeout: int = 60, retries: int = 3, backoff_s: float = 2.0) -> dict:
-    """Consulta metadata del dataset SESCO en CKAN (con reintentos simples)."""
+    """
+    Consulta metadata del dataset SESCO en la API CKAN de datos.gob.ar.
+
+    Parameters
+    ----------
+    timeout : int
+        Segundos de espera por intento HTTP.
+    retries : int
+        Cantidad máxima de intentos ante errores transitorios.
+    backoff_s : float
+        Base de espera entre reintentos (multiplicada por el número de intento).
+
+    Returns
+    -------
+    dict
+        Nodo ``result`` del JSON CKAN (incluye ``resources``).
+
+    Notes
+    -----
+    CKAN puede responder HTTP 500 de forma temporal; se reintenta antes de fallar.
+    """
     request = urllib.request.Request(CKAN_URL, headers={"User-Agent": USER_AGENT})
 
     last_exc: Exception | None = None
@@ -123,7 +204,19 @@ def fetch_ckan_package(timeout: int = 60, retries: int = 3, backoff_s: float = 2
 
 
 def list_resources(package: dict | None = None) -> pd.DataFrame:
-    """Lista recursos del paquete como DataFrame."""
+    """
+    Lista recursos del paquete CKAN como tabla plana.
+
+    Parameters
+    ----------
+    package : dict, optional
+        Paquete CKAN ya obtenido. Si es ``None``, llama a ``fetch_ckan_package``.
+
+    Returns
+    -------
+    pd.DataFrame
+        Una fila por recurso con campos definidos en ``RESOURCE_FIELDS``.
+    """
     if package is None:
         package = fetch_ckan_package()
     rows = [
@@ -142,7 +235,24 @@ def find_resource_by_name(
     """
     Busca un recurso CSV por nombre exacto (normalizado) o por palabras clave.
 
-    Prioriza CSV, recursos con 'promedio' en el nombre y last_modified más reciente.
+    Parameters
+    ----------
+    resources_df : pd.DataFrame
+        Tabla de recursos CKAN (salida de ``list_resources``).
+    nombre_recurso : str
+        Nombre oficial esperado del recurso.
+    fallback_keywords : list[str], optional
+        Si no hay match exacto, exige que todas las keywords aparezcan en el nombre.
+
+    Returns
+    -------
+    pd.Series or None
+        Fila del recurso elegido, o ``None`` si no hay candidatos.
+
+    Notes
+    -----
+    Ante múltiples coincidencias prioriza: formato CSV, nombre con "promedio",
+  y ``last_modified`` más reciente. Evita depender de URLs fijas en código.
     """
     target = normalize_text(nombre_recurso)
     matches: list[pd.Series] = []
@@ -173,7 +283,23 @@ def find_resource_by_name(
 
 
 def infer_raw_filename(resource_key: str, resource_name: str, url: str) -> str:
-    """Nombre de archivo local en data/raw/."""
+    """
+    Deriva el nombre de archivo local en ``data/raw/``.
+
+    Parameters
+    ----------
+    resource_key : str
+        Clave interna del recurso (ej. ``petroleo_provincia``).
+    resource_name : str
+        Nombre CKAN (reservado para futuras reglas; hoy solo afecta legacy).
+    url : str
+        URL de descarga; se usa el último segmento del path si termina en ``.csv``.
+
+    Returns
+    -------
+    str
+        Nombre de archivo para persistir el CSV raw.
+    """
     legacy = {
         "petroleo_provincia": "produccion_petroleo_promedio_diaria_por_provincia.csv",
     }
@@ -186,7 +312,28 @@ def infer_raw_filename(resource_key: str, resource_name: str, url: str) -> str:
 
 
 def download_csv(url: str, destination: Path, timeout: int = 120) -> Path:
-    """Descarga un CSV remoto si no existe localmente."""
+    """
+    Descarga un CSV remoto si no existe ya en disco local.
+
+    Parameters
+    ----------
+    url : str
+        URL directa del recurso.
+    destination : Path
+        Ruta de destino (típicamente bajo ``RAW_DIR``).
+    timeout : int
+        Segundos de espera HTTP.
+
+    Returns
+    -------
+    Path
+        Ruta al archivo local (existente o recién descargado).
+
+    Notes
+    -----
+    Si el archivo ya existe no se sobrescribe; para actualizar hay que borrarlo
+    manualmente o usar ``download_sesco_resource.py`` con otro flujo.
+    """
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
         return destination
@@ -203,12 +350,41 @@ def download_csv(url: str, destination: Path, timeout: int = 120) -> Path:
 
 
 def read_csv(path: Path) -> pd.DataFrame:
-    """Lee CSV SESCO con encoding habitual."""
+    """
+    Lee un CSV SESCO con el encoding habitual de datos.gob.ar.
+
+    Parameters
+    ----------
+    path : Path
+        Ruta al archivo CSV raw.
+
+    Returns
+    -------
+    pd.DataFrame
+        Contenido sin transformar (columnas originales).
+    """
     return pd.read_csv(path, encoding="utf-8-sig")
 
 
 def normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
-    """Normaliza nombres de columnas a snake_case sin acentos."""
+    """
+    Unifica nombres de columnas a snake_case sin acentos.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame con encabezados heterogéneos del CSV fuente.
+
+    Returns
+    -------
+    pd.DataFrame
+        Copia con columnas normalizadas para detección heurística posterior.
+
+    Notes
+    -----
+    Primer paso de transformación tras la lectura raw; habilita ``detect_*``
+    sin depender del nombre exacto publicado por SESCO.
+    """
 
     def clean(name: str) -> str:
         text = unicodedata.normalize("NFKD", str(name))
@@ -223,16 +399,30 @@ def normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def detect_date_columns(columns: list[str] | pd.Index) -> list[str]:
-    """Columnas relacionadas con período/fecha."""
+    """
+    Identifica columnas relacionadas con período o fecha por tokens en el nombre.
+
+    Parameters
+    ----------
+    columns : list[str] or pd.Index
+        Nombres de columnas ya normalizados.
+
+    Returns
+    -------
+    list[str]
+        Subconjunto de columnas candidatas a período.
+    """
     tokens = ("anio", "ano", "mes", "fecha", "periodo", "indice", "tiempo")
     return [col for col in columns if any(token in col for token in tokens)]
 
 
 def detect_numeric_columns(df: pd.DataFrame) -> list[str]:
+    """Lista columnas numéricas del DataFrame (soporte para detección de producción)."""
     return df.select_dtypes(include="number").columns.tolist()
 
 
 def detect_categorical_columns(df: pd.DataFrame) -> list[str]:
+    """Columnas no numéricas ni date-like; candidatas a agrupador geográfico/empresa."""
     numeric = set(detect_numeric_columns(df))
     date_like = set(detect_date_columns(df.columns))
     return [col for col in df.columns if col not in numeric and col not in date_like]
@@ -240,10 +430,23 @@ def detect_categorical_columns(df: pd.DataFrame) -> list[str]:
 
 def detect_period_column(columns: list[str] | pd.Index) -> str | None:
     """
-    Columna principal de período.
+    Selecciona la columna principal de período según prioridad documentada.
 
-    Orden documentado: indice_tiempo → periodo → fecha.
-    Si no hay columna única, se usa anio + mes en build_model_df.
+    Parameters
+    ----------
+    columns : list[str] or pd.Index
+        Nombres de columnas normalizados.
+
+    Returns
+    -------
+    str or None
+        Nombre de la columna elegida, o ``None`` si solo hay ``anio``/``mes``.
+
+    Notes
+    -----
+    Orden: ``indice_tiempo`` → ``periodo`` → ``fecha`` → ``anio_mes`` → otra
+    date-like. Si retorna ``None``, ``preprocess_model_df`` arma ``periodo_str``
+    desde columnas ``anio`` y ``mes``.
     """
     cols = list(columns)
     for candidate in PERIOD_COLUMN_PRIORITY:
@@ -257,7 +460,21 @@ def detect_period_column(columns: list[str] | pd.Index) -> str | None:
 
 
 def find_production_column(df_norm: pd.DataFrame, producto: str) -> str | None:
-    """Detecta columna de producción (petróleo o gas)."""
+    """
+    Detecta la columna de producción según el producto (petróleo o gas).
+
+    Parameters
+    ----------
+    df_norm : pd.DataFrame
+        DataFrame con columnas normalizadas.
+    producto : str
+        ``"petroleo"`` o ``"gas"``.
+
+    Returns
+    -------
+    str or None
+        Nombre de columna detectada, o ``None`` si no hay candidato confiable.
+    """
     columns = list(df_norm.columns)
     product_tokens = ("petroleo", "petr") if producto == "petroleo" else ("gas",)
 
@@ -277,7 +494,21 @@ def find_production_column(df_norm: pd.DataFrame, producto: str) -> str | None:
 
 
 def find_group_column(df_norm: pd.DataFrame, agrupador_tipo: str) -> str | None:
-    """Detecta columna del agrupador (provincia, cuenca, empresa)."""
+    """
+    Detecta la columna del agrupador (provincia, cuenca o empresa).
+
+    Parameters
+    ----------
+    df_norm : pd.DataFrame
+        DataFrame con columnas normalizadas.
+    agrupador_tipo : str
+        Tipo de vista: ``"provincia"``, ``"cuenca"`` o ``"empresa"``.
+
+    Returns
+    -------
+    str or None
+        Nombre de columna que contiene el agrupador.
+    """
     for col in df_norm.columns:
         if agrupador_tipo in col:
             return col
@@ -286,6 +517,14 @@ def find_group_column(df_norm: pd.DataFrame, agrupador_tipo: str) -> str | None:
 
 
 def infer_tipo_recurso(name: str) -> str | None:
+    """
+    Clasifica el tipo de serie según palabras clave en el nombre CKAN.
+
+    Returns
+    -------
+    str or None
+        ``shale_tight``, ``promedio_diario``, ``serie_historica`` o ``None``.
+    """
     n = normalize_text(name)
     if "shale" in n or "tight" in n:
         return "shale_tight"
@@ -304,7 +543,32 @@ def build_model_df(
     source_resource: str,
     tipo_recurso: str | None = None,
 ) -> pd.DataFrame:
-    """Construye df_model con esquema analítico común."""
+    """
+    Construye el DataFrame con esquema analítico común a los 6 recursos MVP.
+
+    Parameters
+    ----------
+    df_norm : pd.DataFrame
+        CSV normalizado (columnas en snake_case).
+    producto : str
+        ``"petroleo"`` o ``"gas"``.
+    agrupador_tipo : str
+        ``"provincia"``, ``"cuenca"`` o ``"empresa"``.
+    source_resource : str
+        Nombre oficial del recurso CKAN (trazabilidad).
+    tipo_recurso : str, optional
+        Clasificación de la serie; si es ``None``, se infiere del nombre.
+
+    Returns
+    -------
+    pd.DataFrame
+        Modelo intermedio con columnas semánticas unificadas.
+
+    Notes
+    -----
+    Provincia, cuenca y empresa son vistas alternativas del mismo fenómeno;
+    cada llamada corresponde a un único CSV fuente y un único ``agrupador_tipo``.
+    """
     if tipo_recurso is None:
         tipo_recurso = infer_tipo_recurso(source_resource) or "promedio_diario"
 
@@ -346,7 +610,26 @@ def build_model_df(
 
 
 def preprocess_model_df(df_model: pd.DataFrame) -> pd.DataFrame:
-    """Normaliza periodo, producción y elimina filas sin datos clave."""
+    """
+    Normaliza período y producción; elimina filas sin datos clave.
+
+    Parameters
+    ----------
+    df_model : pd.DataFrame
+        Salida de ``build_model_df`` con ``REQUIRED_MODEL_COLUMNS``.
+
+    Returns
+    -------
+    pd.DataFrame
+        Registros con ``periodo_str``, ``periodo_dt``, ``anio``, ``mes`` y
+        ``produccion`` numérica; sin filas con nulos en campos obligatorios.
+
+    Notes
+    -----
+    No convierte nulos de producción a cero: los descarta con ``dropna``.
+    El período incompleto del último mes se trata después en
+    ``detectar_periodo_incompleto``.
+    """
     df = df_model.copy()
 
     missing = [c for c in REQUIRED_MODEL_COLUMNS if c not in df.columns]
@@ -356,12 +639,14 @@ def preprocess_model_df(df_model: pd.DataFrame) -> pd.DataFrame:
     df["periodo_original"] = df["periodo"]
 
     periodo_raw = df["periodo"].astype(str).str.strip()
+    # Formato canónico YYYY-M o YYYY-MM publicado por SESCO en indice_tiempo / periodo.
     valid_mask = periodo_raw.str.match(r"^\d{4}-\d{1,2}$", na=False)
     periodo_str = periodo_raw.where(valid_mask)
 
     if "anio" in df.columns and "mes" in df.columns:
         anio_num = pd.to_numeric(df["anio"], errors="coerce")
         mes_num = pd.to_numeric(df["mes"], errors="coerce")
+        # Fallback cuando el CSV trae año y mes en columnas separadas.
         fallback = (
             anio_num.astype("Int64").astype(str)
             + "-"
@@ -394,7 +679,32 @@ def detectar_periodo_incompleto(
     *,
     verbose: bool = True,
 ) -> dict[str, Any]:
-    """Excluye el último período si su total es < threshold vs. el anterior."""
+    """
+    Detecta si el último período parece una carga parcial del mes en curso.
+
+    Parameters
+    ----------
+    df_model_clean : pd.DataFrame
+        Datos ya preprocesados de un recurso.
+    threshold : float
+        Umbral mínimo (último/penúltimo) para considerar el último período válido.
+        Por defecto 0.5 (regla del 50 %).
+    verbose : bool
+        Si es ``True``, imprime advertencia en consola.
+
+    Returns
+    -------
+    dict
+        ``latest_period``, ``latest_valid_period``, ``excluded_period``, ``ratio``,
+        ``periodos_validos`` (lista de ``periodo_dt`` aceptados).
+
+    Notes
+    -----
+    No elimina filas del DataFrame de entrada; la exclusión la aplica
+    ``apply_valid_periods``. Evita distorsionar KPIs cuando SESCO publica el mes
+    antes de cerrarlo.
+    """
+    # Total nacional del recurso por período (suma de todos los agrupadores).
     agg = (
         df_model_clean.groupby(["periodo_dt", "periodo_str"], as_index=False)["produccion"]
         .sum()
@@ -412,6 +722,7 @@ def detectar_periodo_incompleto(
         penultimo_valor = agg.iloc[-2]["produccion"]
         ratio = ultimo_valor / penultimo_valor if penultimo_valor else 1.0
 
+        # Caída abrupta: típico de mes en curso con pocos días reportados.
         if ratio < threshold:
             excluded_period = latest_period
             latest_valid_period = agg.iloc[-2]["periodo_str"]
@@ -434,7 +745,21 @@ def detectar_periodo_incompleto(
 def apply_valid_periods(
     df_model_clean: pd.DataFrame, periodo_info: dict[str, Any]
 ) -> pd.DataFrame:
-    """Filtra períodos válidos (sin el último incompleto si corresponde)."""
+    """
+    Filtra filas a los períodos considerados válidos tras la regla del 50 %.
+
+    Parameters
+    ----------
+    df_model_clean : pd.DataFrame
+        Datos limpios que pueden incluir el último período incompleto.
+    periodo_info : dict
+        Salida de ``detectar_periodo_incompleto`` (clave ``periodos_validos``).
+
+    Returns
+    -------
+    pd.DataFrame
+        Subconjunto exportable y apto para análisis/KPIs.
+    """
     return df_model_clean[
         df_model_clean["periodo_dt"].isin(periodo_info["periodos_validos"])
     ].copy()
@@ -448,7 +773,29 @@ def validate_resource_basic(
     periodo_info: dict[str, Any],
     observaciones: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Resumen de validación por recurso para sesco_validaciones_resumen.csv."""
+    """
+    Genera una fila de resumen de validación para un recurso procesado.
+
+    Parameters
+    ----------
+    resource_key : str
+        Clave interna del recurso.
+    config : dict
+        Configuración MVP del recurso.
+    df_model : pd.DataFrame
+        Modelo original (antes de filtrar períodos incompletos).
+    df_model_clean_valid : pd.DataFrame
+        Datos exportables.
+    periodo_info : dict
+        Metadatos de períodos válidos.
+    observaciones : list[str], optional
+        Notas acumuladas (descarga, exclusión de período, etc.).
+
+    Returns
+    -------
+    dict
+        Métricas para una fila de ``sesco_validaciones_resumen.csv``.
+    """
     obs = "; ".join(observaciones) if observaciones else ""
 
     return {
@@ -475,7 +822,19 @@ def validate_resource_basic(
 
 
 def prepare_export_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Selecciona columnas finales y formatea periodo_dt para CSV."""
+    """
+    Selecciona columnas finales y formatea ``periodo_dt`` para export CSV.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame con el esquema del modelo (pre o post filtro de períodos).
+
+    Returns
+    -------
+    pd.DataFrame
+        Subconjunto según ``EXPORT_COLUMNS`` listo para ``to_csv``.
+    """
     export = df[EXPORT_COLUMNS].copy()
     if pd.api.types.is_datetime64_any_dtype(export["periodo_dt"]):
         export["periodo_dt"] = export["periodo_dt"].dt.strftime("%Y-%m-%d")
@@ -487,7 +846,23 @@ def export_model_clean(
     resource_key: str,
     processed_dir: Path | None = None,
 ) -> Path:
-    """Exporta CSV limpio individual del recurso."""
+    """
+    Exporta el CSV limpio individual de un recurso MVP.
+
+    Parameters
+    ----------
+    df_model_clean_valid : pd.DataFrame
+        Datos válidos (sin último período incompleto si correspondía).
+    resource_key : str
+        Prefijo del archivo (ej. ``petroleo_provincia``).
+    processed_dir : Path, optional
+        Directorio de salida; por defecto ``PROCESSED_DIR``.
+
+    Returns
+    -------
+    Path
+        Ruta a ``{resource_key}_model_clean.csv``.
+    """
     processed_dir = processed_dir or PROCESSED_DIR
     processed_dir.mkdir(parents=True, exist_ok=True)
     path = processed_dir / f"{resource_key}_model_clean.csv"
@@ -502,7 +877,23 @@ def export_periodos_resumen(
     resource_key: str,
     processed_dir: Path | None = None,
 ) -> Path:
-    """Resumen de producción total y agrupadores por período."""
+    """
+    Exporta resumen de producción total y cantidad de agrupadores por período.
+
+    Parameters
+    ----------
+    df_model_clean_valid : pd.DataFrame
+        Datos válidos del recurso.
+    resource_key : str
+        Prefijo del archivo de salida.
+    processed_dir : Path, optional
+        Directorio de salida.
+
+    Returns
+    -------
+    Path
+        Ruta a ``{resource_key}_periodos_resumen.csv``.
+    """
     processed_dir = processed_dir or PROCESSED_DIR
     resumen = (
         df_model_clean_valid.groupby("periodo_str", as_index=False)
@@ -518,7 +909,7 @@ def export_periodos_resumen(
 
 
 def format_number(value: float, decimals: int = 0) -> str:
-    """Formato local: coma decimal, sin separador de miles."""
+    """Formatea número con coma decimal (presentación en notebooks)."""
     return f"{value:.{decimals}f}".replace(".", ",")
 
 
@@ -531,10 +922,34 @@ def get_valid_periods_by_group(
     verbose: bool = False,
 ) -> dict[str, Any]:
     """
-    Detecta períodos válidos por combinación producto + agrupador_tipo.
+    Calcula períodos válidos para una vista del dataset unificado.
 
-    Evita usar un único corte global cuando cada recurso puede tener
-    distinto último período cargado.
+    Aplica la misma regla del 50 % que ``detectar_periodo_incompleto``, pero
+    sobre el subconjunto ``producto`` + ``agrupador_tipo`` del unificado.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Dataset unificado (``sesco_produccion_model_clean``).
+    producto : str
+        ``"petroleo"`` o ``"gas"``.
+    agrupador_tipo : str
+        ``"provincia"``, ``"cuenca"`` o ``"empresa"``.
+    threshold : float
+        Umbral último/penúltimo (default 0.5).
+    verbose : bool
+        Imprime advertencia si se excluye un período.
+
+    Returns
+    -------
+    dict
+        Metadatos de períodos, incluyendo ``producto`` y ``agrupador_tipo``.
+
+    Notes
+    -----
+    Evita usar un único corte global cuando cada vista puede tener distinto
+    último mes publicado por SESCO. Usado en notebook 02; el dashboard consume
+    ``sesco_latest_periods_by_view.csv`` generado en notebook 03.
     """
     sub = df[
         (df["producto"] == producto) & (df["agrupador_tipo"] == agrupador_tipo)
@@ -565,6 +980,7 @@ def get_valid_periods_by_group(
         ultimo_valor = agg.iloc[-1]["produccion"]
         penultimo_valor = agg.iloc[-2]["produccion"]
         ratio = ultimo_valor / penultimo_valor if penultimo_valor else 1.0
+        # Misma regla del 50 % que detectar_periodo_incompleto, por vista del unificado.
         if ratio < threshold:
             excluded_period = latest_period
             latest_valid_period = agg.iloc[-2]["periodo_str"]
@@ -588,9 +1004,23 @@ def get_valid_periods_by_group(
 
 def build_totals_comparison_table(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Compara magnitudes por período y producto entre provincia, cuenca y empresa.
+    Compara totales por período entre vistas provincia, cuenca y empresa.
 
-    No suma vistas entre sí; sólo permite controlar diferencias de cobertura.
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Dataset unificado o modelo con columnas estándar.
+
+    Returns
+    -------
+    pd.DataFrame
+        Una fila por ``periodo_str`` y ``producto`` con totales por vista y
+        diferencias porcentuales respecto de provincia.
+
+    Notes
+    -----
+    No suma vistas entre sí: provincia, cuenca y empresa son alternativas.
+    La vista provincia se usa como referencia para porcentajes de diferencia.
     """
     base = (
         df.groupby(["periodo_str", "producto", "agrupador_tipo"], as_index=False)["produccion"]
@@ -618,6 +1048,7 @@ def build_totals_comparison_table(df: pd.DataFrame) -> pd.DataFrame:
             pivot[col] = pd.NA
 
     denom = pivot["total_provincia"].replace(0, pd.NA)
+    # Provincia como referencia metodológica; no implica sumar las tres vistas.
     pivot["diff_cuenca_vs_provincia_pct"] = (
         (pivot["total_cuenca"] - pivot["total_provincia"]) / denom * 100
     )
@@ -639,8 +1070,36 @@ def process_resource(
     verbose: bool = True,
 ) -> ProcessResult:
     """
-    Pipeline completo para un recurso MVP:
-    CKAN → raw CSV → df_model → limpio → export.
+    Ejecuta el pipeline ETL completo para un recurso MVP.
+
+    Parameters
+    ----------
+    resource_key : str
+        Clave interna (ej. ``gas_cuenca``).
+    config : dict
+        Debe incluir ``producto``, ``agrupador_tipo``, ``nombre_recurso``.
+    resources_df : pd.DataFrame
+        Catálogo CKAN (``list_resources``).
+    raw_dir : Path, optional
+        Directorio de CSV raw.
+    processed_dir : Path, optional
+        Directorio de salida procesada.
+    incomplete_threshold : float
+        Umbral para ``detectar_periodo_incompleto``.
+    download_if_missing : bool
+        Si es ``True``, descarga desde CKAN cuando falta el raw local.
+    verbose : bool
+        Logs de mapeo de columnas y conteos.
+
+    Returns
+    -------
+    ProcessResult
+        Resultado con DataFrames intermedios, validación y rutas exportadas.
+
+    Notes
+    -----
+    Secuencia: CKAN → raw → normalizar → modelo → limpiar → período incompleto
+    → export individual + resumen → validación básica.
     """
     raw_dir = raw_dir or RAW_DIR
     processed_dir = processed_dir or PROCESSED_DIR
@@ -690,6 +1149,7 @@ def process_resource(
     )
 
     df_model_clean = preprocess_model_df(df_model)
+    # Regla del 50 %: puede marcar el último mes como incompleto a nivel recurso.
     periodo_info = detectar_periodo_incompleto(
         df_model_clean, threshold=incomplete_threshold, verbose=verbose
     )
@@ -740,14 +1200,36 @@ def process_all_resources(
     verbose: bool = True,
 ) -> tuple[list[ProcessResult], pd.DataFrame, pd.DataFrame]:
     """
-    Procesa todos los recursos MVP y devuelve resultados + validaciones + unificado.
+    Procesa todos los recursos MVP y arma el dataset unificado.
+
+    Parameters
+    ----------
+    resources_config : dict
+        Mapa ``resource_key`` → config (como ``SESCO_RESOURCES_MVP``).
+    package : dict, optional
+        Paquete CKAN precargado.
+    verbose : bool
+        Logs por recurso y errores.
+
+    Returns
+    -------
+    tuple
+        ``(lista ProcessResult, df_unificado, df_validaciones)``.
+
+    Notes
+    -----
+    Si un recurso falla, registra un ``ProcessResult`` vacío con observación
+    de error y continúa con los demás. El unificado concatena solo recursos
+    con datos válidos.
     """
     if package is None:
         package = fetch_ckan_package()
     resources_df = list_resources(package)
 
     results: list[ProcessResult] = []
+    i=0
     for resource_key, config in resources_config.items():
+        i+=1
         try:
             result = process_resource(
                 resource_key,
@@ -755,6 +1237,7 @@ def process_all_resources(
                 resources_df,
                 verbose=verbose,
             )
+            print(i)
             results.append(result)
         except Exception as exc:
             if verbose:
@@ -793,6 +1276,7 @@ def process_all_resources(
         for r in results
         if len(r.df_model_clean_valid) > 0
     ]
+    print(valid_frames)
     df_unified = (
         pd.concat(valid_frames, ignore_index=True) if valid_frames else pd.DataFrame()
     )
@@ -802,7 +1286,25 @@ def process_all_resources(
 
 
 def validate_unified_dataset(df: pd.DataFrame) -> dict[str, Any]:
-    """Validaciones del dataset unificado."""
+    """
+    Ejecuta validaciones de consistencia sobre el dataset unificado.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Dataset concatenado (salida de ``process_all_resources``).
+
+    Returns
+    -------
+    dict
+        Totales, cobertura por producto/tipo, rango temporal, duplicados y
+        muestra de filas duplicadas.
+
+    Notes
+    -----
+    Los duplicados se detectan sobre ``DUPLICATE_KEY_COLUMNS``. Usado en
+    notebook 02; no forma parte del CLI ``run_mvp_processing.py``.
+    """
     dup_mask = df.duplicated(subset=DUPLICATE_KEY_COLUMNS, keep=False)
     duplicates = df[dup_mask]
 
@@ -830,7 +1332,24 @@ def export_unified(
     df_validaciones: pd.DataFrame,
     processed_dir: Path | None = None,
 ) -> tuple[Path, Path]:
-    """Exporta dataset unificado y resumen de validaciones."""
+    """
+    Exporta el dataset unificado y el resumen de validaciones por recurso.
+
+    Parameters
+    ----------
+    df_unified : pd.DataFrame
+        Concatenación de todos los recursos MVP válidos.
+    df_validaciones : pd.DataFrame
+        Una fila por recurso (salida de ``validate_resource_basic``).
+    processed_dir : Path, optional
+        Directorio de salida.
+
+    Returns
+    -------
+    tuple[Path, Path]
+        Rutas a ``sesco_produccion_model_clean.csv`` y
+        ``sesco_validaciones_resumen.csv``.
+    """
     processed_dir = processed_dir or PROCESSED_DIR
     processed_dir.mkdir(parents=True, exist_ok=True)
 
