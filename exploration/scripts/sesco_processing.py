@@ -3,9 +3,10 @@ Pipeline ETL exploratorio para datos de producción SESCO (datos.gob.ar).
 
 Concentra la lógica reutilizable extraída de ``01_exploracion_sesco.ipynb`` y
 generalizada en ``02_modelo_unificado_sesco.ipynb``. Procesa los 6 recursos MVP
-(provincia / cuenca / empresa × petróleo / gas): consulta CKAN, descarga CSV,
-normaliza columnas heterogéneas, construye un modelo analítico común, detecta
-períodos incompletos y exporta archivos en ``exploration/data/processed/``.
+(provincia / cuenca / empresa × petróleo / gas): consulta CKAN, descarga CSV
+versionados en ``data/raw/snapshots/``, mantiene ``data/raw/latest/``, normaliza
+columnas heterogéneas, construye un modelo analítico común, detecta períodos
+incompletos y exporta archivos en ``exploration/data/processed/``.
 
 Esta etapa precede a una arquitectura formal con PostgreSQL/PostGIS; varias
 funciones de este módulo son candidatas a migrar a un ETL de producción.
@@ -23,11 +24,13 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import time
 import unicodedata
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -43,7 +46,69 @@ USER_AGENT = "OilGas-Exploration/1.0"
 SCRIPT_DIR = Path(__file__).resolve().parent
 EXPLORATION_DIR = SCRIPT_DIR.parent
 RAW_DIR = EXPLORATION_DIR / "data" / "raw"
+RAW_SNAPSHOTS_DIR = RAW_DIR / "snapshots"
+RAW_LATEST_DIR = RAW_DIR / "latest"
 PROCESSED_DIR = EXPLORATION_DIR / "data" / "processed"
+
+# Configuración MVP compartida (scripts CLI y snapshots).
+SESCO_RESOURCES_MVP: dict[str, dict[str, Any]] = {
+    "petroleo_provincia": {
+        "producto": "petroleo",
+        "agrupador_tipo": "provincia",
+        "nombre_recurso": "Producción de petróleo promedio diaria por provincia",
+    },
+    "gas_provincia": {
+        "producto": "gas",
+        "agrupador_tipo": "provincia",
+        "nombre_recurso": "Producción de gas promedio diaria por provincia",
+    },
+    "petroleo_cuenca": {
+        "producto": "petroleo",
+        "agrupador_tipo": "cuenca",
+        "nombre_recurso": "Producción de petróleo promedio diaria por cuenca",
+    },
+    "gas_cuenca": {
+        "producto": "gas",
+        "agrupador_tipo": "cuenca",
+        "nombre_recurso": "Producción de gas promedio diaria por cuenca",
+    },
+    "petroleo_empresa": {
+        "producto": "petroleo",
+        "agrupador_tipo": "empresa",
+        "nombre_recurso": "Producción de petróleo promedio diaria por empresa",
+    },
+    "gas_empresa": {
+        "producto": "gas",
+        "agrupador_tipo": "empresa",
+        "nombre_recurso": "Producción de gas promedio diaria por empresa",
+    },
+}
+
+# Campos CKAN persistidos en manifest.json por recurso.
+MANIFEST_RESOURCE_FIELDS = [
+    "id",
+    "name",
+    "url",
+    "format",
+    "mimetype",
+    "size",
+    "created",
+    "last_modified",
+    "cache_last_updated",
+    "revision_timestamp",
+    "hash",
+]
+
+# Campos usados para detectar cambios entre snapshots (CKAN puede omitir algunos).
+RESOURCE_CHANGE_FIELDS = [
+    "id",
+    "url",
+    "last_modified",
+    "cache_last_updated",
+    "revision_timestamp",
+    "size",
+    "hash",
+]
 
 RESOURCE_FIELDS = [
     "name",
@@ -318,6 +383,348 @@ def find_resource_by_name(
     return df_match.iloc[0]
 
 
+def snapshot_filename(resource_key: str) -> str:
+    """Nombre canónico del CSV raw en snapshots y ``latest/``."""
+    return f"{resource_key}.csv"
+
+
+def get_today_snapshot_dir(base_dir: Path | None = None) -> Path:
+    """
+    Devuelve la carpeta de snapshot del día en formato ISO ``YYYY-MM-DD``.
+
+    Parameters
+    ----------
+    base_dir : Path, optional
+        Directorio base de snapshots; por defecto ``RAW_SNAPSHOTS_DIR``.
+
+    Returns
+    -------
+    Path
+        ``exploration/data/raw/snapshots/YYYY-MM-DD`` (puede no existir aún).
+    """
+    snapshots_root = base_dir or RAW_SNAPSHOTS_DIR
+    return snapshots_root / date.today().isoformat()
+
+
+def load_manifest(snapshot_dir: Path) -> dict[str, Any]:
+    """
+    Lee ``manifest.json`` de un snapshot.
+
+    Parameters
+    ----------
+    snapshot_dir : Path
+        Carpeta del snapshot.
+
+    Returns
+    -------
+    dict
+        Contenido del manifest, o dict vacío si falta o es inválido.
+    """
+    manifest_path = snapshot_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return {}
+    try:
+        with manifest_path.open(encoding="utf-8") as fh:
+            data = json.load(fh)
+        if not isinstance(data, dict):
+            return {}
+        return data
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_manifest(snapshot_dir: Path, manifest: dict[str, Any]) -> None:
+    """
+    Persiste ``manifest.json`` indentado en la carpeta del snapshot.
+
+    Parameters
+    ----------
+    snapshot_dir : Path
+        Carpeta destino.
+    manifest : dict
+        Metadata del snapshot (recursos CKAN, fechas, etc.).
+    """
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = snapshot_dir / "manifest.json"
+    with manifest_path.open("w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
+
+
+def _is_valid_manifest(manifest: dict[str, Any]) -> bool:
+    resources = manifest.get("resources")
+    return isinstance(resources, dict) and len(resources) > 0
+
+
+def get_latest_snapshot_dir(snapshots_dir: Path | None = None) -> Path | None:
+    """
+    Busca el snapshot más reciente con ``manifest.json`` válido.
+
+    Parameters
+    ----------
+    snapshots_dir : Path, optional
+        Raíz de snapshots; por defecto ``RAW_SNAPSHOTS_DIR``.
+
+    Returns
+    -------
+    Path or None
+        Carpeta del snapshot más reciente, o ``None`` si no hay snapshots válidos.
+
+    Notes
+    -----
+    Ordena por nombre de carpeta (``YYYY-MM-DD`` o ``YYYY-MM-DD_HHMMSS``) de forma
+    lexicográfica descendente.
+    """
+    root = snapshots_dir or RAW_SNAPSHOTS_DIR
+    if not root.is_dir():
+        return None
+
+    candidates: list[str] = []
+    for entry in root.iterdir():
+        if not entry.is_dir():
+            continue
+        manifest = load_manifest(entry)
+        if _is_valid_manifest(manifest):
+            candidates.append(entry.name)
+
+    if not candidates:
+        return None
+
+    latest_name = sorted(candidates, reverse=True)[0]
+    return root / latest_name
+
+
+def build_resource_metadata(resource: dict[str, Any]) -> dict[str, Any]:
+    """
+    Extrae metadata relevante de un recurso CKAN para el manifest.
+
+    Parameters
+    ----------
+    resource : dict
+        Nodo ``resources[]`` del paquete CKAN.
+
+    Returns
+    -------
+    dict
+        Subconjunto de campos CKAN; ``None`` si el campo no existe en la fuente.
+    """
+    return {field: resource.get(field) for field in MANIFEST_RESOURCE_FIELDS}
+
+
+def has_resource_changed(current_metadata: dict[str, Any], previous_metadata: dict[str, Any]) -> bool:
+    """
+    Indica si la metadata CKAN de un recurso cambió respecto al último snapshot.
+
+    Parameters
+    ----------
+    current_metadata : dict
+        Metadata actual (``build_resource_metadata``).
+    previous_metadata : dict
+        Metadata del manifest anterior para el mismo ``resource_key``.
+
+    Returns
+    -------
+    bool
+        ``True`` si no hay metadata previa o algún campo relevante difiere.
+
+    Notes
+    -----
+    CKAN puede no publicar todos los campos (``hash``, ``revision_timestamp``, etc.).
+    Solo se comparan campos presentes en al menos uno de los dos lados; si todos los
+    disponibles coinciden, se considera sin cambios.
+    """
+    if not previous_metadata:
+        return True
+
+    for field in RESOURCE_CHANGE_FIELDS:
+        current = current_metadata.get(field)
+        previous = previous_metadata.get(field)
+        if current is None and previous is None:
+            continue
+        if str(current) != str(previous):
+            return True
+    return False
+
+
+def _find_full_resource(package: dict[str, Any], resource_id: str) -> dict[str, Any]:
+    for resource in package.get("resources", []):
+        if resource.get("id") == resource_id:
+            return resource
+    raise ValueError(f"Recurso CKAN no encontrado en paquete: {resource_id}")
+
+
+def _collect_mvp_resource_metadata(
+    package: dict[str, Any],
+    resources_df: pd.DataFrame,
+    resources_config: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    metadata: dict[str, dict[str, Any]] = {}
+    for resource_key, config in resources_config.items():
+        row = find_resource_by_name(
+            resources_df,
+            config["nombre_recurso"],
+            fallback_keywords=[config["producto"], config["agrupador_tipo"]],
+        )
+        if row is None:
+            raise ValueError(
+                f"Recurso no encontrado en CKAN: {config['nombre_recurso']} ({resource_key})"
+            )
+        full_resource = _find_full_resource(package, row["id"])
+        metadata[resource_key] = build_resource_metadata(full_resource)
+    return metadata
+
+
+def _any_resource_changed(
+    current: dict[str, dict[str, Any]],
+    previous_manifest: dict[str, Any],
+) -> bool:
+    previous_resources = previous_manifest.get("resources", {})
+    if not isinstance(previous_resources, dict) or not previous_resources:
+        return True
+    for resource_key, current_meta in current.items():
+        prev_meta = previous_resources.get(resource_key, {})
+        if has_resource_changed(current_meta, prev_meta):
+            return True
+    return False
+
+
+def sync_latest_from_snapshot(snapshot_dir: Path) -> None:
+    """
+    Actualiza ``raw/latest/`` copiando CSV y manifest desde un snapshot.
+
+    Parameters
+    ----------
+    snapshot_dir : Path
+        Snapshot fuente.
+
+    Notes
+    -----
+    ``latest/`` es una copia de conveniencia (no symlink) para compatibilidad Windows.
+    """
+    RAW_LATEST_DIR.mkdir(parents=True, exist_ok=True)
+    for item in RAW_LATEST_DIR.iterdir():
+        if item.is_file():
+            item.unlink()
+
+    for csv_path in sorted(snapshot_dir.glob("*.csv")):
+        shutil.copy2(csv_path, RAW_LATEST_DIR / csv_path.name)
+
+    manifest_src = snapshot_dir / "manifest.json"
+    if manifest_src.is_file():
+        shutil.copy2(manifest_src, RAW_LATEST_DIR / "manifest.json")
+
+
+def _download_mvp_resources(
+    snapshot_dir: Path,
+    resources_config: dict[str, dict[str, Any]],
+    resources_df: pd.DataFrame,
+) -> None:
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    for resource_key, config in resources_config.items():
+        row = find_resource_by_name(
+            resources_df,
+            config["nombre_recurso"],
+            fallback_keywords=[config["producto"], config["agrupador_tipo"]],
+        )
+        if row is None:
+            raise ValueError(
+                f"Recurso no encontrado en CKAN: {config['nombre_recurso']} ({resource_key})"
+            )
+        destination = snapshot_dir / snapshot_filename(resource_key)
+        download_csv(row["url"], destination, overwrite=True)
+
+
+def ensure_raw_snapshot(
+    force_download: bool = False,
+    update_latest: bool = True,
+    resources_config: dict[str, dict[str, Any]] | None = None,
+) -> Path:
+    """
+    Asegura un snapshot raw versionado de los recursos MVP desde CKAN.
+
+    Parameters
+    ----------
+    force_download : bool
+        Si es ``True``, descarga aunque CKAN no haya cambiado.
+    update_latest : bool
+        Si es ``True``, sincroniza ``raw/latest/`` con el snapshot seleccionado.
+    resources_config : dict, optional
+        Mapa ``resource_key`` → config MVP; por defecto ``SESCO_RESOURCES_MVP``.
+
+    Returns
+    -------
+    Path
+        Carpeta del snapshot a usar para procesamiento.
+
+    Notes
+    -----
+    - Sin snapshots previos: crea ``snapshots/YYYY-MM-DD/``, descarga los 6 CSV,
+      escribe manifest y actualiza ``latest/``.
+    - CKAN sin cambios: reutiliza el último snapshot válido (sin descargas duplicadas).
+    - CKAN con cambios: crea snapshot del día y descarga los 6 recursos (snapshot completo).
+    - ``force_download=True`` con carpeta del día existente: usa sufijo ``_HHMMSS``.
+    """
+    resources_config = resources_config or SESCO_RESOURCES_MVP
+    package = fetch_ckan_package()
+    resources_df = list_resources(package)
+    current_metadata = _collect_mvp_resource_metadata(
+        package, resources_df, resources_config
+    )
+
+    latest_snapshot = get_latest_snapshot_dir()
+    previous_manifest = load_manifest(latest_snapshot) if latest_snapshot else {}
+    today_dir = get_today_snapshot_dir()
+
+    needs_download = force_download or _any_resource_changed(
+        current_metadata, previous_manifest
+    )
+
+    if not needs_download:
+        target = latest_snapshot
+        if target is None and today_dir.exists() and _is_valid_manifest(load_manifest(today_dir)):
+            target = today_dir
+        if target is not None:
+            if update_latest:
+                sync_latest_from_snapshot(target)
+            return target
+
+    if today_dir.exists() and _is_valid_manifest(load_manifest(today_dir)):
+        stamp = datetime.now().strftime("%H%M%S")
+        snapshot_dir = today_dir.parent / f"{date.today().isoformat()}_{stamp}"
+    else:
+        snapshot_dir = today_dir
+    _download_mvp_resources(snapshot_dir, resources_config, resources_df)
+
+    manifest: dict[str, Any] = {
+        "snapshot_date": snapshot_dir.name,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "timezone_note": "created_at en hora local del sistema",
+        "package_id": PACKAGE_ID,
+        "ckan_url": CKAN_URL,
+        "resources": current_metadata,
+    }
+    save_manifest(snapshot_dir, manifest)
+
+    if update_latest:
+        sync_latest_from_snapshot(snapshot_dir)
+
+    return snapshot_dir
+
+
+def resolve_raw_dir() -> Path:
+    """
+    Resuelve el directorio raw para procesamiento.
+
+    Returns
+    -------
+    Path
+        ``raw/latest/`` si existe con manifest válido; si no, ``RAW_DIR`` (legacy).
+    """
+    if RAW_LATEST_DIR.is_dir() and _is_valid_manifest(load_manifest(RAW_LATEST_DIR)):
+        return RAW_LATEST_DIR
+    return RAW_DIR
+
+
 def infer_raw_filename(resource_key: str, resource_name: str, url: str) -> str:
     """
     Deriva el nombre de archivo local en ``data/raw/``.
@@ -347,7 +754,13 @@ def infer_raw_filename(resource_key: str, resource_name: str, url: str) -> str:
     return f"{resource_key}.csv"
 
 
-def download_csv(url: str, destination: Path, timeout: int = 120) -> Path:
+def download_csv(
+    url: str,
+    destination: Path,
+    timeout: int = 120,
+    *,
+    overwrite: bool = False,
+) -> Path:
     """
     Descarga un CSV remoto si no existe ya en disco local.
 
@@ -356,9 +769,11 @@ def download_csv(url: str, destination: Path, timeout: int = 120) -> Path:
     url : str
         URL directa del recurso.
     destination : Path
-        Ruta de destino (típicamente bajo ``RAW_DIR``).
+        Ruta de destino (típicamente bajo ``RAW_DIR`` o un snapshot).
     timeout : int
         Segundos de espera HTTP.
+    overwrite : bool
+        Si es ``True``, sobrescribe un archivo existente.
 
     Returns
     -------
@@ -367,11 +782,11 @@ def download_csv(url: str, destination: Path, timeout: int = 120) -> Path:
 
     Notes
     -----
-    Si el archivo ya existe no se sobrescribe; para actualizar hay que borrarlo
-    manualmente o usar ``download_sesco_resource.py`` con otro flujo.
+    Por defecto no sobrescribe archivos existentes. Los snapshots usan
+    ``overwrite=True`` para garantizar contenido actualizado.
     """
     destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists():
+    if destination.exists() and not overwrite:
         return destination
 
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
@@ -1138,7 +1553,7 @@ def process_resource(
     Secuencia: CKAN → raw → normalizar → modelo → limpiar → período incompleto
     → export individual + resumen → validación básica.
     """
-    raw_dir = raw_dir or RAW_DIR
+    raw_dir = raw_dir or resolve_raw_dir()
     processed_dir = processed_dir or PROCESSED_DIR
     notes: list[str] = []
 
@@ -1155,8 +1570,10 @@ def process_resource(
 
     source_name = resource["name"]
     url = resource["url"]
-    raw_name = infer_raw_filename(resource_key, source_name, url)
-    raw_path = raw_dir / raw_name
+    raw_path = raw_dir / snapshot_filename(resource_key)
+    if not raw_path.exists():
+        raw_name = infer_raw_filename(resource_key, source_name, url)
+        raw_path = raw_dir / raw_name
 
     if download_if_missing and not raw_path.exists():
         download_csv(url, raw_path)
@@ -1234,6 +1651,7 @@ def process_all_resources(
     resources_config: dict[str, dict[str, Any]],
     *,
     package: dict | None = None,
+    raw_dir: Path | None = None,
     verbose: bool = True,
 ) -> tuple[list[ProcessResult], pd.DataFrame, pd.DataFrame]:
     """
@@ -1245,6 +1663,8 @@ def process_all_resources(
         Mapa ``resource_key`` → config (como ``SESCO_RESOURCES_MVP``).
     package : dict, optional
         Paquete CKAN precargado.
+    raw_dir : Path, optional
+        Directorio de CSV raw; por defecto ``resolve_raw_dir()`` (``latest/`` o legacy).
     verbose : bool
         Logs por recurso y errores.
 
@@ -1262,19 +1682,18 @@ def process_all_resources(
     if package is None:
         package = fetch_ckan_package()
     resources_df = list_resources(package)
+    raw_dir = raw_dir or resolve_raw_dir()
 
     results: list[ProcessResult] = []
-    i=0
     for resource_key, config in resources_config.items():
-        i+=1
         try:
             result = process_resource(
                 resource_key,
                 config,
                 resources_df,
+                raw_dir=raw_dir,
                 verbose=verbose,
             )
-            print(i)
             results.append(result)
         except Exception as exc:
             if verbose:
@@ -1302,7 +1721,7 @@ def process_all_resources(
                         "cantidad_produccion_negativa": 0,
                         "observaciones": f"error: {exc}",
                     },
-                    raw_path=RAW_DIR / f"{resource_key}.csv",
+                    raw_path=raw_dir / snapshot_filename(resource_key),
                     export_path=PROCESSED_DIR / f"{resource_key}_model_clean.csv",
                     notes=[str(exc)],
                 )
@@ -1313,7 +1732,6 @@ def process_all_resources(
         for r in results
         if len(r.df_model_clean_valid) > 0
     ]
-    print(valid_frames)
     df_unified = (
         pd.concat(valid_frames, ignore_index=True) if valid_frames else pd.DataFrame()
     )

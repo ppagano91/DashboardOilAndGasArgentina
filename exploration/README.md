@@ -84,6 +84,13 @@ exploration/
 │   └── run_mvp_processing.py
 ├── data/
 │   ├── raw/                               ← fuentes descargadas (gitignored salvo .gitkeep)
+│   │   ├── snapshots/                     ← snapshots diarios versionados (YYYY-MM-DD)
+│   │   │   └── YYYY-MM-DD/
+│   │   │       ├── petroleo_provincia.csv
+│   │   │       ├── … (6 recursos MVP)
+│   │   │       └── manifest.json
+│   │   ├── latest/                        ← copia de conveniencia del snapshot más reciente
+│   │   └── *.csv                          ← legacy (descargas sueltas anteriores; no borrar automáticamente)
 │   └── processed/                         ← derivados analíticos (gitignored salvo .gitkeep)
 └── streamlit_app/
     └── app.py
@@ -98,6 +105,8 @@ exploration/
 | `.venv/` | Entorno virtual local opcional; no versionado. |
 | `notebooks/_out.txt` | Residuo de ejecución/debug; puede ignorarse o eliminarse. |
 | `data/raw/produccion_petroleo_promedio_diaria_por_provincia_v1.csv` | Posible **legacy** / corrida anterior del mismo recurso; el pipeline MVP usa la clave `petroleo_provincia`. |
+| `data/raw/snapshots/` | Snapshots versionados por fecha (`YYYY-MM-DD`); cada carpeta incluye los 6 CSV MVP + `manifest.json`. |
+| `data/raw/latest/` | Copia (no symlink) del snapshot más reciente válido; el procesamiento la usa por defecto si existe. |
 | `data/processed/cuencas_productivas_geo.geojson` | **Legacy** — solo 5 productivas; no usar. |
 | `data/processed/cuencas_productivas_sesco_join_preview.csv` | **Legacy** — vista previa antigua; no usar. |
 
@@ -110,7 +119,7 @@ Orden lógico recomendado de punta a punta:
 ```mermaid
 flowchart TD
     A[API CKAN package_show] --> B[Detección de resources]
-    B --> C[Descarga CSV → data/raw/]
+    B --> C[Descarga CSV → raw/snapshots/ + raw/latest/]
     C --> D[01_exploracion_sesco.ipynb]
     D --> E[Normalización tentativa / modelo común]
     E --> F[02_modelo_unificado_sesco.ipynb o run_mvp_processing.py]
@@ -263,10 +272,11 @@ Ubicación: `exploration/scripts/`. Ejecutar desde la **raíz del repositorio** 
 |-------|---------|
 | **Responsabilidad** | Orquestar el procesamiento de los 6 recursos MVP por consola. |
 | **Cuándo usarlo** | Regenerar el unificado sin abrir Jupyter. |
-| **Entradas** | `SESCO_RESOURCES_MVP` (config inline); CKAN + raw existente o descarga automática. |
+| **Entradas** | `SESCO_RESOURCES_MVP`; CKAN + raw en `latest/` o legacy en `raw/`. |
 | **Salidas** | Unificado + validaciones por recurso (ver §8). |
-| **Funciones principales** | `main()` → `process_all_resources()` + `export_unified()`. |
+| **Funciones principales** | `main()` → opcional `ensure_raw_snapshot()` + `process_all_resources()` + `export_unified()`. |
 | **CLI** | `python exploration/scripts/run_mvp_processing.py` |
+| **CLI con snapshot** | `--update-raw` (descarga solo si CKAN cambió) · `--force-download` (fuerza descarga del día) |
 | **No genera** | Archivos de la notebook 03 (`sesco_latest_periods_by_view.csv`, etc.). |
 
 ---
@@ -283,7 +293,8 @@ Ubicación: `exploration/scripts/`. Ejecutar desde la **raíz del repositorio** 
 **Capacidades principales (resumen):**
 
 - Consulta y resolución de recursos CKAN (`fetch_ckan_package`, `find_resource_by_name`).
-- Descarga condicional de CSV (`download_csv` — no re-descarga si el raw ya existe).
+- Snapshots raw versionados (`ensure_raw_snapshot`, `manifest.json`, `raw/latest/`).
+- Descarga condicional de CSV (`download_csv` — no re-descarga por defecto; snapshots usan `overwrite=True`).
 - Normalización de columnas y detección heurística de período, producción y agrupador.
 - Construcción del modelo común (`build_model_df`, `preprocess_model_df`).
 - Detección de último período incompleto — regla del **50 %** (`detect_incomplete_period`, `get_valid_periods_by_group`).
@@ -293,7 +304,47 @@ Ubicación: `exploration/scripts/`. Ejecutar desde la **raíz del repositorio** 
 
 **Detalle completo de funciones:** [documentacion_scripts_exploration.md](documentacion_scripts_exploration.md).
 
-**Nota de mantenimiento:** `process_all_resources` contiene `print` de depuración residual; no forman parte del contrato del pipeline.
+**Nota de mantenimiento:** CSV legacy sueltos en `data/raw/` (fuera de `snapshots/` y `latest/`) siguen siendo legibles como fallback; no se eliminan automáticamente.
+
+### Snapshots raw y manifest
+
+El módulo `ensure_raw_snapshot()` implementa descarga versionada desde CKAN:
+
+| Comportamiento | Descripción |
+|----------------|-------------|
+| **Sin snapshots previos** | Crea `snapshots/YYYY-MM-DD/`, descarga los 6 CSV, escribe `manifest.json`, sincroniza `latest/`. |
+| **CKAN sin cambios** | Reutiliza el último snapshot válido; no descarga duplicados. |
+| **CKAN con cambios** | Crea snapshot del día (sufijo `_HHMMSS` si ya existe carpeta del día) y descarga los 6 recursos. |
+| **`--force-download`** | Fuerza descarga aunque no haya cambios detectados. |
+
+Ejemplo de `manifest.json`:
+
+```json
+{
+  "snapshot_date": "2026-06-20",
+  "created_at": "2026-06-20T14:30:00",
+  "timezone_note": "created_at en hora local del sistema",
+  "package_id": "energia-produccion-petroleo-gas-sesco",
+  "ckan_url": "https://datos.gob.ar/api/3/action/package_show?id=energia-produccion-petroleo-gas-sesco",
+  "resources": {
+    "petroleo_provincia": {
+      "id": "abc123",
+      "name": "Producción de petróleo promedio diaria por provincia",
+      "url": "https://...",
+      "format": "CSV",
+      "mimetype": null,
+      "size": 1234567,
+      "created": "2020-01-01T00:00:00",
+      "last_modified": "2026-05-15T10:00:00",
+      "cache_last_updated": null,
+      "revision_timestamp": null,
+      "hash": null
+    }
+  }
+}
+```
+
+Los nombres de archivo en snapshots y `latest/` son `{resource_key}.csv` (ej. `petroleo_provincia.csv`).
 
 ---
 
@@ -556,6 +607,12 @@ python exploration/scripts/inspect_ckan_resources.py
 
 # Pipeline MVP (6 recursos → unificado)
 python exploration/scripts/run_mvp_processing.py
+
+# Actualizar raw desde CKAN solo si hay cambios, luego procesar
+python exploration/scripts/run_mvp_processing.py --update-raw
+
+# Forzar descarga raw del día, luego procesar
+python exploration/scripts/run_mvp_processing.py --force-download
 
 # Descarga puntual
 python exploration/scripts/download_sesco_resource.py "https://..." nombre_opcional.csv

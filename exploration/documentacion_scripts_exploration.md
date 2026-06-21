@@ -235,10 +235,30 @@ Globales (vía `export_unified`):
 Importa directamente:
 
 ```python
-from sesco_processing import export_unified, process_all_resources
+from sesco_processing import (
+    SESCO_RESOURCES_MVP,
+    ensure_raw_snapshot,
+    export_unified,
+    process_all_resources,
+    resolve_raw_dir,
+)
 ```
 
-Toda la lógica de transformación reside en el módulo; el script solo define configuración MVP y `main()`.
+Toda la lógica de transformación reside en el módulo; el script define `main()` con argumentos CLI.
+
+### CLI
+
+```bash
+python exploration/scripts/run_mvp_processing.py                  # procesa desde raw/latest/ o legacy
+python exploration/scripts/run_mvp_processing.py --update-raw       # snapshot CKAN si hay cambios, luego procesa
+python exploration/scripts/run_mvp_processing.py --force-download # fuerza descarga del día, luego procesa
+```
+
+| Flag | Efecto |
+|------|--------|
+| *(ninguno)* | Usa `resolve_raw_dir()`; descarga puntual solo si falta un CSV en procesamiento individual. |
+| `--update-raw` | Llama `ensure_raw_snapshot(force_download=False)` antes de procesar. |
+| `--force-download` | Llama `ensure_raw_snapshot(force_download=True)` antes de procesar. |
 
 ---
 
@@ -266,8 +286,11 @@ El módulo implementa una **mini-pipeline** con etapas encadenadas: descubrimien
 | `USER_AGENT` | Cabecera HTTP identificable | Todas las descargas HTTP | Buena práctica ante APIs públicas |
 | `SCRIPT_DIR` | Directorio del módulo | Derivación de paths | Rutas relativas al código, no al CWD |
 | `EXPLORATION_DIR` | Carpeta `exploration/` | Derivación de `RAW_DIR`, `PROCESSED_DIR` | Separar código de datos |
-| `RAW_DIR` | `exploration/data/raw/` | `download_csv`, `process_resource` | CSV descargados sin transformar |
+| `RAW_DIR` | `exploration/data/raw/` | `download_csv`, `process_resource`, legacy | CSV descargados sin transformar |
+| `RAW_SNAPSHOTS_DIR` | `exploration/data/raw/snapshots/` | `ensure_raw_snapshot`, `get_latest_snapshot_dir` | Snapshots diarios versionados |
+| `RAW_LATEST_DIR` | `exploration/data/raw/latest/` | `sync_latest_from_snapshot`, `resolve_raw_dir` | Copia del snapshot más reciente |
 | `PROCESSED_DIR` | `exploration/data/processed/` | Todas las exportaciones | Salida analítica del MVP |
+| `SESCO_RESOURCES_MVP` | Config de 6 recursos | `ensure_raw_snapshot`, `run_mvp_processing.py` | Punto único de verdad del MVP |
 | `RESOURCE_FIELDS` | Campos CKAN a conservar | `list_resources`, `inspect_ckan_resources` | Subconjunto útil de metadata |
 | `REQUIRED_MODEL_COLUMNS` | Columnas mínimas antes de preprocesar | `preprocess_model_df` | Fallar temprano si falta estructura |
 | `EXPORT_COLUMNS` | Esquema del CSV final | `prepare_export_df` | Contrato estable para dashboard y unificado |
@@ -276,7 +299,7 @@ El módulo implementa una **mini-pipeline** con etapas encadenadas: descubrimien
 
 ### Configuración de recursos (externa al módulo)
 
-La configuración MVP vive en `run_mvp_processing.py` (`SESCO_RESOURCES_MVP`) y se replica en la notebook 02. Cada entrada es un `dict` con:
+La configuración MVP vive en `sesco_processing.py` (`SESCO_RESOURCES_MVP`) y se replica en la notebook 02. Cada entrada es un `dict` con:
 
 | Clave | Significado |
 |-------|-------------|
@@ -392,12 +415,76 @@ A partir de junio 2026, el código interno de `sesco_processing.py` usa **inglé
 
 #### `download_csv`
 
-- **Propósito:** Descargar CSV remoto a `RAW_DIR` si no existe localmente.
-- **Entradas:** `url`, `destination`, `timeout`.
+- **Propósito:** Descargar CSV remoto a disco.
+- **Entradas:** `url`, `destination`, `timeout`, `overwrite` (default `False`).
 - **Salida:** `Path` al archivo local.
-- **Lógica resumida:** Crea directorios → si existe, retorna → si no, descarga bytes.
-- **Uso:** `process_resource` cuando `download_if_missing=True`.
-- **Consideraciones:** **No re-descarga** si el archivo ya está; para forzar actualización hay que borrar el raw manualmente.
+- **Lógica resumida:** Crea directorios → si existe y no `overwrite`, retorna → si no, descarga bytes.
+- **Uso:** `process_resource` cuando `download_if_missing=True`; snapshots con `overwrite=True`.
+- **Consideraciones:** Por defecto **no re-descarga** si el archivo ya está; los snapshots fuerzan sobrescritura.
+
+#### Snapshots raw versionados
+
+| Función | Propósito |
+|---------|-----------|
+| `get_today_snapshot_dir()` | Devuelve `snapshots/YYYY-MM-DD` (ISO). |
+| `get_latest_snapshot_dir()` | Snapshot más reciente con `manifest.json` válido, o `None`. |
+| `load_manifest` / `save_manifest` | Leer/escribir metadata del snapshot. |
+| `build_resource_metadata` | Extrae campos CKAN para el manifest (sin inventar valores). |
+| `has_resource_changed` | Compara metadata actual vs anterior (`id`, `url`, `last_modified`, etc.). |
+| `ensure_raw_snapshot` | Orquesta consulta CKAN, comparación, descarga y sync de `latest/`. |
+| `sync_latest_from_snapshot` | Copia CSV + manifest a `raw/latest/` (no symlink). |
+| `resolve_raw_dir` | `latest/` si válido; si no, `RAW_DIR` legacy. |
+| `snapshot_filename` | Nombre canónico `{resource_key}.csv`. |
+
+**Estructura:**
+
+```
+exploration/data/raw/
+├── snapshots/
+│   └── YYYY-MM-DD/
+│       ├── petroleo_provincia.csv … gas_empresa.csv
+│       └── manifest.json
+└── latest/          ← copia de conveniencia del snapshot activo
+```
+
+**Cuándo descarga vs reutiliza:**
+
+| Caso | Comportamiento |
+|------|----------------|
+| Sin snapshots | Crea `YYYY-MM-DD`, descarga 6 CSV, manifest, `latest/`. |
+| CKAN sin cambios | Reutiliza último snapshot; no descarga. |
+| CKAN con cambios | Nuevo snapshot del día; descarga los 6 recursos. |
+| Carpeta del día ya existe | Usa sufijo `YYYY-MM-DD_HHMMSS` para no pisar silenciosamente. |
+| `--force-download` | Descarga aunque no haya cambios detectados. |
+
+**Ejemplo `manifest.json`:**
+
+```json
+{
+  "snapshot_date": "2026-06-20",
+  "created_at": "2026-06-20T14:30:00",
+  "timezone_note": "created_at en hora local del sistema",
+  "package_id": "energia-produccion-petroleo-gas-sesco",
+  "ckan_url": "https://datos.gob.ar/api/3/action/package_show?id=energia-produccion-petroleo-gas-sesco",
+  "resources": {
+    "petroleo_provincia": {
+      "id": "abc123",
+      "name": "Producción de petróleo promedio diaria por provincia",
+      "url": "https://datos.gob.ar/dataset/.../download/....csv",
+      "format": "CSV",
+      "mimetype": null,
+      "size": 1234567,
+      "created": "2020-01-01T00:00:00",
+      "last_modified": "2026-05-15T10:00:00",
+      "cache_last_updated": null,
+      "revision_timestamp": null,
+      "hash": null
+    }
+  }
+}
+```
+
+Los CSV legacy sueltos en `raw/` (nombres antiguos) siguen siendo legibles como fallback vía `infer_raw_filename`; no se eliminan automáticamente.
 
 #### `read_csv`
 
@@ -725,7 +812,7 @@ El dashboard (`exploration/streamlit_app/app.py`) es principalmente **capa de vi
 
 **Flujo recomendado antes de abrir Streamlit:**
 
-1. `python exploration/scripts/run_mvp_processing.py`
+1. `python exploration/scripts/run_mvp_processing.py --update-raw` (recomendado para datos frescos)
 2. Ejecutar notebook `03_validacion_final_sesco.ipynb`
 3. (Opcional) notebook 04 para capas geoespaciales
 4. `streamlit run exploration/streamlit_app/app.py`
@@ -742,6 +829,12 @@ python exploration/scripts/inspect_ckan_resources.py
 
 # Pipeline MVP completo (6 recursos)
 python exploration/scripts/run_mvp_processing.py
+
+# Actualizar raw desde CKAN (solo si cambió) y procesar
+python exploration/scripts/run_mvp_processing.py --update-raw
+
+# Forzar descarga raw y procesar
+python exploration/scripts/run_mvp_processing.py --force-download
 
 # Descarga puntual
 python exploration/scripts/download_sesco_resource.py "https://..." nombre_opcional.csv

@@ -8,6 +8,8 @@ regenerar ``sesco_produccion_model_clean.csv`` y validaciones por recurso.
 Uso (desde la raíz del repo)::
 
     python exploration/scripts/run_mvp_processing.py
+    python exploration/scripts/run_mvp_processing.py --update-raw
+    python exploration/scripts/run_mvp_processing.py --force-download
 
 Notes
 -----
@@ -16,46 +18,53 @@ dashboard; ejecutar después la notebook ``03_validacion_final_sesco.ipynb``.
 """
 from __future__ import annotations
 
+import argparse
 import sys
 
-from sesco_processing import export_unified, process_all_resources
+from sesco_processing import (
+    SESCO_RESOURCES_MVP,
+    ensure_raw_snapshot,
+    export_unified,
+    process_all_resources,
+    resolve_raw_dir,
+)
 
-SESCO_RESOURCES_MVP = {
-    "petroleo_provincia": {
-        "producto": "petroleo",
-        "agrupador_tipo": "provincia",
-        "nombre_recurso": "Producción de petróleo promedio diaria por provincia",
-    },
-    "gas_provincia": {
-        "producto": "gas",
-        "agrupador_tipo": "provincia",
-        "nombre_recurso": "Producción de gas promedio diaria por provincia",
-    },
-    "petroleo_cuenca": {
-        "producto": "petroleo",
-        "agrupador_tipo": "cuenca",
-        "nombre_recurso": "Producción de petróleo promedio diaria por cuenca",
-    },
-    "gas_cuenca": {
-        "producto": "gas",
-        "agrupador_tipo": "cuenca",
-        "nombre_recurso": "Producción de gas promedio diaria por cuenca",
-    },
-    "petroleo_empresa": {
-        "producto": "petroleo",
-        "agrupador_tipo": "empresa",
-        "nombre_recurso": "Producción de petróleo promedio diaria por empresa",
-    },
-    "gas_empresa": {
-        "producto": "gas",
-        "agrupador_tipo": "empresa",
-        "nombre_recurso": "Producción de gas promedio diaria por empresa",
-    },
-}
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Procesa los 6 recursos MVP SESCO y exporta el dataset unificado.",
+    )
+    parser.add_argument(
+        "--update-raw",
+        action="store_true",
+        help="Consulta CKAN y crea snapshot raw solo si hay cambios (o si no hay snapshot previo).",
+    )
+    parser.add_argument(
+        "--force-download",
+        action="store_true",
+        help="Fuerza descarga de los 6 CSV a un snapshot del día (sufijo horario si ya existe).",
+    )
+    return parser.parse_args()
 
 
 def main() -> int:
-    _, df_unified, df_valid = process_all_resources(SESCO_RESOURCES_MVP, verbose=True)
+    args = parse_args()
+    raw_dir = resolve_raw_dir()
+
+    if args.force_download:
+        snapshot_dir = ensure_raw_snapshot(force_download=True)
+        raw_dir = snapshot_dir
+        print(f"Snapshot raw (forzado): {snapshot_dir}")
+    elif args.update_raw:
+        snapshot_dir = ensure_raw_snapshot(force_download=False)
+        raw_dir = snapshot_dir
+        print(f"Snapshot raw: {snapshot_dir}")
+
+    _, df_unified, df_valid = process_all_resources(
+        SESCO_RESOURCES_MVP,
+        raw_dir=raw_dir,
+        verbose=True,
+    )
     if len(df_unified) == 0:
         print("No se generó dataset unificado.", file=sys.stderr)
         return 1
