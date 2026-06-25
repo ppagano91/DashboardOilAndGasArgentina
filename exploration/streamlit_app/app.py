@@ -22,9 +22,13 @@ CUENCA_EQUIVALENCIAS_GEO_A_SESCO = {
 
 MAP_CENTER = {"lat": -38.5, "lon": -63.5}
 MAP_ZOOM = 3
-# Plotly choropleth_map no expone minzoom de forma uniforme en todas las versiones;
-# se acota la vista con center/zoom inicial y bounds aproximados de Argentina.
-ARGENTINA_MAP_BOUNDS = {"west": -73.5, "east": -53.0, "south": -55.2, "north": -21.8}
+# Margen alrededor de Argentina para permitir desplazamiento amplio sin encerrar la vista.
+# Plotly MapLibre no expone minzoom de forma uniforme; el zoom inicial (~3) muestra el país
+# completo y los bounds actúan como límite de pan, no como recorte estricto del viewport.
+ARGENTINA_MAP_BOUNDS = {"west": -80.0, "east": -46.0, "south": -58.5, "north": -17.0}
+
+# Detalle técnico (match geoespacial, cobertura) oculto por defecto en la vista principal.
+SHOW_TECHNICAL_DETAILS_DEFAULT = False
 
 METRICA_TOTAL = "Producción total del rango"
 METRICA_PROMEDIO = "Producción promedio del rango"
@@ -57,8 +61,9 @@ st.set_page_config(
 st.title("Monitor de Producción Hidrocarburífera Argentina — SESCO")
 st.markdown(
     """
-    MVP inicial para explorar la producción mensual de petróleo y gas con datos
-    procesados localmente desde SESCO (datos.gob.ar).
+    Tablero exploratorio de producción mensual de petróleo y gas en Argentina,
+    construido con datos oficiales SESCO publicados en datos.gob.ar y obtenidos
+    mediante la API CKAN.
     """
 )
 
@@ -236,6 +241,20 @@ def format_producto_display(producto: str) -> str:
     return "petróleo" if producto == "petroleo" else "gas"
 
 
+# Renombres solo para tablas en la UI; la lógica interna sigue usando los nombres del modelo.
+DISPLAY_COLUMN_NAMES = {
+    "source_resource": "fuente_recurso",
+}
+
+
+def translate_display_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Renombra columnas solo para presentación en Streamlit (no altera el modelo de datos)."""
+    rename_map = {k: v for k, v in DISPLAY_COLUMN_NAMES.items() if k in df.columns}
+    if not rename_map:
+        return df
+    return df.rename(columns=rename_map)
+
+
 def add_cuenca_map_display_fields(plot_df: pd.DataFrame) -> pd.DataFrame:
     """Campos auxiliares para tooltip y tabla de usuario (no reemplazan columnas técnicas de QA)."""
     df = plot_df.copy()
@@ -270,30 +289,113 @@ def build_cuenca_user_table(gdf_map: gpd.GeoDataFrame) -> pd.DataFrame:
     display_df = add_cuenca_map_display_fields(
         gdf_map.drop(columns="geometry", errors="ignore")
     )
+    with_prod = display_df[display_df["produccion"].notna()].copy()
+    if with_prod.empty:
+        return pd.DataFrame(
+            columns=[
+                "Cuenca",
+                "Producción",
+                "Unidad",
+                "Participación %",
+                "Tipo de cuenca",
+                "Ubicación",
+            ]
+        )
+
+    total_prod = float(with_prod["produccion"].sum())
+    with_prod["participacion_pct"] = (
+        (with_prod["produccion"] / total_prod * 100).round(1) if total_prod else 0.0
+    )
+    with_prod["participacion_display"] = with_prod["participacion_pct"].map(
+        lambda x: f"{x:.1f}%"
+    )
+
     return (
-        display_df[
+        with_prod[
             [
                 "cuenca",
-                "producto_display",
                 "production_display",
                 "unit_display",
+                "participacion_display",
+                "participacion_pct",
                 "basin_type_display",
                 "ubicacion_display",
             ]
         ]
+        .sort_values("participacion_pct", ascending=False)
+        .drop(columns=["participacion_pct"])
         .rename(
             columns={
                 "cuenca": "Cuenca",
-                "producto_display": "Producto",
                 "production_display": "Producción",
                 "unit_display": "Unidad",
+                "participacion_display": "Participación %",
                 "basin_type_display": "Tipo de cuenca",
                 "ubicacion_display": "Ubicación",
             }
         )
-        .sort_values("Cuenca")
         .reset_index(drop=True)
     )
+
+
+def build_cuenca_participacion_df(gdf_map: gpd.GeoDataFrame) -> pd.DataFrame:
+    """Producción y participación por cuenca para el gráfico de participación."""
+    df = gdf_map.drop(columns="geometry", errors="ignore").copy()
+    df = df[df["produccion"].notna()].copy()
+    if df.empty:
+        return df
+
+    total = float(df["produccion"].sum())
+    df["participacion_pct"] = (df["produccion"] / total * 100) if total else 0.0
+    return df.sort_values("produccion", ascending=False).reset_index(drop=True)
+
+
+def build_cuenca_participacion_chart(
+    gdf_map: gpd.GeoDataFrame,
+    producto: str,
+    top_n: int,
+    metrica: str,
+    period_start: pd.Timestamp,
+    period_end: pd.Timestamp,
+) -> Optional[go.Figure]:
+    """Barras horizontales de participación por cuenca en la producción seleccionada."""
+    part_df = build_cuenca_participacion_df(gdf_map)
+    if part_df.empty:
+        return None
+
+    unit = get_production_unit_display(producto)
+    producto_label = format_producto_display(producto)
+    chart_df = part_df.head(top_n).copy()
+    chart_df["produccion_label"] = chart_df["produccion"].map(lambda x: f"{x:,.2f}")
+    chart_df["participacion_label"] = chart_df["participacion_pct"].map(lambda x: f"{x:.1f}%")
+
+    metrica_titulo = "total" if metrica == METRICA_TOTAL else "promedio"
+    titulo = "Participación por cuenca en la producción seleccionada"
+    subtitle = (
+        f"{producto_label} · {metrica_titulo} · {period_start:%Y-%m} a {period_end:%Y-%m}"
+    )
+
+    fig = px.bar(
+        chart_df.sort_values("participacion_pct", ascending=True),
+        x="participacion_pct",
+        y="cuenca",
+        orientation="h",
+        text="participacion_label",
+        custom_data=["produccion_label", "participacion_pct"],
+        labels={"participacion_pct": "Participación %", "cuenca": "Cuenca"},
+        title=f"{titulo}<br><sup>{subtitle}</sup>",
+    )
+    fig.update_traces(
+        textposition="outside",
+        hovertemplate=(
+            "Cuenca: %{y}<br>"
+            f"Producción: %{{customdata[0]}} {unit}<br>"
+            "Participación: %{customdata[1]:.1f}%"
+            "<extra></extra>"
+        ),
+    )
+    fig.update_layout(xaxis_ticksuffix="%")
+    return fig
 
 
 def build_cuenca_geo_technical_table(
@@ -357,7 +459,11 @@ def build_cuenca_choropleth(gdf_map: gpd.GeoDataFrame, titulo: str, colorbar_tit
         height=560,
         margin={"r": 0, "t": 56, "l": 0, "b": 0},
         coloraxis_colorbar={"title": colorbar_title},
-        map_bounds=ARGENTINA_MAP_BOUNDS,
+        map={
+            "center": MAP_CENTER,
+            "zoom": MAP_ZOOM,
+            "bounds": ARGENTINA_MAP_BOUNDS,
+        },
     )
     return fig
 
@@ -392,7 +498,8 @@ agrupador_nombre_options = sorted(df_base["agrupador_nombre"].dropna().unique().
 agrupadores_sel = st.sidebar.multiselect(
     "Agrupadores",
     options=agrupador_nombre_options,
-    default=agrupador_nombre_options[: min(8, len(agrupador_nombre_options))],
+    # default=agrupador_nombre_options[: min(8, len(agrupador_nombre_options))],
+    default=["AUSTRAL","NEUQUINA","CUYANA","GOLFO SAN JORGE","ARGENTINA NORTE"],
 )
 
 if agrupadores_sel:
@@ -409,6 +516,11 @@ period_range = st.sidebar.slider(
 )
 
 top_n = st.sidebar.selectbox("Top N para ranking", options=[5, 10, 15, 20], index=1)
+
+show_technical_details = st.sidebar.checkbox(
+    "Mostrar detalles técnicos",
+    value=SHOW_TECHNICAL_DETAILS_DEFAULT,
+)
 
 df_filtered = df_base[
     (df_base["periodo_dt"] >= pd.to_datetime(period_range[0]))
@@ -555,10 +667,9 @@ period_start_map = pd.to_datetime(period_range[0])
 period_end_map = pd.to_datetime(period_range[1])
 
 st.caption(
-    f"Producto: **{producto_mapa_label}** · Agrupador: **cuenca** · "
-    f"Períodos: **{period_start_map:%Y-%m}** a **{period_end_map:%Y-%m}** "
-    "(sincronizado con el rango del panel lateral). "
-    "Petróleo y gas no se mezclan."
+    f"Producto: **{producto_mapa_label}** · Vista por cuenca · "
+    f"Período: **{period_start_map:%Y-%m}** a **{period_end_map:%Y-%m}** "
+    "(sincronizado con el rango del panel lateral)."
 )
 
 metrica_mapa = st.selectbox(
@@ -567,10 +678,9 @@ metrica_mapa = st.selectbox(
     index=0,
 )
 
-st.warning(
-    "Mapa exploratorio. La geometría de cuencas SESCO es parcial. "
-    "Algunas cuencas del dataset SESCO pueden no tener polígono asociado "
-    "y no se representan en el mapa."
+st.info(
+    "La cobertura de geometría por cuenca es parcial. "
+    "Algunas cuencas con producción en SESCO pueden no aparecer en el mapa."
 )
 
 gdf_consolidado = load_geo_consolidado()
@@ -596,9 +706,8 @@ else:
     else:
         if gdf_mapa["produccion"].notna().sum() == 0:
             st.warning(
-                "El merge no asignó producción a ningún polígono. Posibles causas: "
-                "nombres de cuenca no coinciden con la geometría, rango sin datos, "
-                "o cuencas del rango sin polígono en la capa consolidada."
+                "No se pudo asignar producción a ninguna cuenca del mapa para el producto "
+                "y el rango seleccionados."
             )
 
         metrica_titulo = (
@@ -614,54 +723,80 @@ else:
         fig_mapa = build_cuenca_choropleth(gdf_mapa, mapa_titulo, colorbar_title)
         st.plotly_chart(fig_mapa, use_container_width=True)
 
-        st.markdown("**Producción por cuenca (vista resumida)**")
-        st.dataframe(
-            build_cuenca_user_table(gdf_mapa),
-            use_container_width=True,
-            hide_index=True,
+        fig_part = build_cuenca_participacion_chart(
+            gdf_mapa,
+            producto_mapa,
+            top_n,
+            metrica_mapa,
+            period_start_map,
+            period_end_map,
         )
-
-        with st.expander("Ver detalle técnico del cruce geoespacial"):
-            st.caption(
-                "Información técnica de validación del cruce entre geometría y producción SESCO. "
-                "No forma parte del análisis principal."
+        if fig_part is None:
+            st.info(
+                "No hay cuencas con producción suficiente para mostrar participación en el rango seleccionado."
             )
-            st.dataframe(
-                build_cuenca_geo_technical_table(gdf_mapa, match_report_df),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-    st.markdown("**Control de cobertura (rango seleccionado)**")
-    st.dataframe(control_df, use_container_width=True, hide_index=True)
-
-    with st.expander("Ver reporte de match de cuencas (exploración)"):
-        if match_report_df is None:
-            st.warning(f"No se encontró el reporte esperado: `{MATCH_REPORT_PATH}`")
         else:
-            status_options = sorted(
-                match_report_df["match_status"].dropna().astype(str).unique().tolist()
-            )
-            destacar = st.multiselect(
-                "Filtrar por estado de match",
-                options=status_options,
-                default=status_options,
-            )
-            report_view = match_report_df.copy()
-            if destacar:
-                report_view = report_view[report_view["match_status"].isin(destacar)]
-            st.dataframe(report_view, use_container_width=True, hide_index=True)
+            st.plotly_chart(fig_part, use_container_width=True)
 
-        if geo_coverage_df is not None:
-            st.caption(
-                f"Resumen estático de último período válido (`{GEO_COVERAGE_SUMMARY_PATH.name}`), "
-                "solo referencia."
-            )
+        resumen_cuencas = build_cuenca_user_table(gdf_mapa)
+        if resumen_cuencas.empty:
+            st.info("No hay cuencas con producción para mostrar en el resumen.")
+        else:
+            st.markdown("**Resumen de producción por cuenca**")
+            st.dataframe(resumen_cuencas, use_container_width=True, hide_index=True)
+
+    if show_technical_details and gdf_consolidado is not None:
+        st.markdown("**Detalle técnico (desarrollo)**")
+
+        with st.expander("Cruce geoespacial y validación de cuencas", expanded=False):
+            if gdf_mapa is not None:
+                st.caption(
+                    "Información de validación del cruce entre geometría y producción SESCO."
+                )
+                st.dataframe(
+                    translate_display_columns(
+                        build_cuenca_geo_technical_table(gdf_mapa, match_report_df)
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            st.markdown("**Control de cobertura (rango seleccionado)**")
             st.dataframe(
-                geo_coverage_df.loc[geo_coverage_df["producto"] == producto_mapa],
+                translate_display_columns(control_df),
                 use_container_width=True,
                 hide_index=True,
             )
+
+            if match_report_df is None:
+                st.warning(f"No se encontró el reporte esperado: `{MATCH_REPORT_PATH}`")
+            else:
+                status_options = sorted(
+                    match_report_df["match_status"].dropna().astype(str).unique().tolist()
+                )
+                destacar = st.multiselect(
+                    "Filtrar por estado de match",
+                    options=status_options,
+                    default=status_options,
+                )
+                report_view = match_report_df.copy()
+                if destacar:
+                    report_view = report_view[report_view["match_status"].isin(destacar)]
+                st.dataframe(
+                    translate_display_columns(report_view),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            if geo_coverage_df is not None:
+                st.caption("Resumen de cobertura geoespacial por producto (último período válido).")
+                st.dataframe(
+                    translate_display_columns(
+                        geo_coverage_df.loc[geo_coverage_df["producto"] == producto_mapa]
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
 st.divider()
 st.subheader("Detalle de datos filtrados")
@@ -675,7 +810,11 @@ cols_show = [
     "produccion",
     "source_resource",
 ]
-st.dataframe(df_filtered[cols_show], use_container_width=True, hide_index=True)
+st.dataframe(
+    translate_display_columns(df_filtered[cols_show]),
+    use_container_width=True,
+    hide_index=True,
+)
 
 csv_bytes = df_filtered[cols_show].to_csv(index=False).encode("utf-8")
 st.download_button(
@@ -686,12 +825,14 @@ st.download_button(
 )
 
 st.divider()
-st.subheader("Notas metodológicas")
-st.markdown(
-    """
-    - Provincia, cuenca y empresa son vistas distintas del mismo fenómeno, no se suman entre sí.
-    - Los totales y rankings usan último período válido por combinación producto + agrupador_tipo.
-    - Petróleo y gas pueden tener unidades distintas, por eso se analizan por separado en este MVP.
-    - Para comparaciones directas entre productos se recomienda usar base 100 o gráficos separados.
-    """
-)
+with st.expander("Notas metodológicas", expanded=False):
+    st.markdown(
+        """
+        - Provincia, cuenca y empresa son formas alternativas de agrupar la misma
+          producción; por eso no se suman entre sí.
+        - Los indicadores se calculan usando el último período válido disponible
+          para la vista seleccionada.
+        - Petróleo y gas se presentan por separado porque corresponden a productos
+          y unidades de medida distintas.
+        """
+    )
