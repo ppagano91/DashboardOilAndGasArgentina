@@ -29,6 +29,24 @@ ARGENTINA_MAP_BOUNDS = {"west": -73.5, "east": -53.0, "south": -55.2, "north": -
 METRICA_TOTAL = "Producción total del rango"
 METRICA_PROMEDIO = "Producción promedio del rango"
 
+# Unidades según columnas raw SESCO: petroleo → produccion_petroleo_promedio_dia_m3;
+# gas → produccion_gas_promedio_dia_mm3 (miles de m³/día).
+PRODUCTION_UNIT_BY_PRODUCTO = {
+    "petroleo": "m³/día",
+    "gas": "miles de m³/día",
+}
+
+CUENCA_MAP_HOVER_TEMPLATE = (
+    "<b>%{customdata[0]}</b><br>"
+    "Producto: %{customdata[1]}<br>"
+    "Período: %{customdata[2]}<br>"
+    "Métrica: %{customdata[3]}<br>"
+    "Producción: %{customdata[4]} %{customdata[5]}<br>"
+    "Tipo de cuenca: %{customdata[6]}<br>"
+    "Ubicación: %{customdata[7]}"
+    "<extra></extra>"
+)
+
 
 st.set_page_config(
     page_title="Monitor de Producción Hidrocarburífera Argentina — SESCO",
@@ -40,7 +58,7 @@ st.title("Monitor de Producción Hidrocarburífera Argentina — SESCO")
 st.markdown(
     """
     MVP inicial para explorar la producción mensual de petróleo y gas con datos
-    procesados localmente desde SESCO (datos.gob.ar), sin backend ni base de datos.
+    procesados localmente desde SESCO (datos.gob.ar).
     """
 )
 
@@ -209,29 +227,114 @@ def build_cuenca_map_layer(
     return merged, pd.DataFrame([control])
 
 
-def build_cuenca_choropleth(gdf_map: gpd.GeoDataFrame, titulo: str, colorbar_title: str) -> go.Figure:
-    plot_df = gdf_map.copy()
-    plot_df["map_id"] = plot_df.index.astype(str)
-    plot_df["produccion_txt"] = plot_df["produccion"].apply(
+def get_production_unit_display(producto: str) -> str:
+    """Unidad visible según recurso SESCO (columnas raw m3 / mm3)."""
+    return PRODUCTION_UNIT_BY_PRODUCTO.get(producto, "unidad según recurso SESCO")
+
+
+def format_producto_display(producto: str) -> str:
+    return "petróleo" if producto == "petroleo" else "gas"
+
+
+def add_cuenca_map_display_fields(plot_df: pd.DataFrame) -> pd.DataFrame:
+    """Campos auxiliares para tooltip y tabla de usuario (no reemplazan columnas técnicas de QA)."""
+    df = plot_df.copy()
+    producto = str(df["producto"].iloc[0]) if "producto" in df.columns and len(df) else ""
+    df["production_display"] = df["produccion"].apply(
         lambda x: f"{x:,.2f}" if pd.notna(x) else "N/D"
     )
+    df["unit_display"] = get_production_unit_display(producto)
+    df["producto_display"] = format_producto_display(producto)
+    df["period_display"] = df.apply(
+        lambda r: (
+            f"{r['periodo_desde']} a {r['periodo_hasta']}"
+            if pd.notna(r.get("periodo_desde"))
+            and pd.notna(r.get("periodo_hasta"))
+            and r["periodo_desde"] != r["periodo_hasta"]
+            else str(r.get("periodo_desde") or r.get("periodo_hasta") or "N/D")
+        ),
+        axis=1,
+    )
+    df["metrica_display"] = df["metrica"].fillna("N/D").astype(str) if "metrica" in df.columns else "N/D"
+    df["basin_type_display"] = (
+        df["tipo"].fillna("N/D").astype(str) if "tipo" in df.columns else "N/D"
+    )
+    df["ubicacion_display"] = (
+        df["ubicacion"].fillna("N/D").astype(str) if "ubicacion" in df.columns else "N/D"
+    )
+    return df
+
+
+def build_cuenca_user_table(gdf_map: gpd.GeoDataFrame) -> pd.DataFrame:
+    """Tabla resumida para usuario final (sin columnas técnicas de merge geoespacial)."""
+    display_df = add_cuenca_map_display_fields(
+        gdf_map.drop(columns="geometry", errors="ignore")
+    )
+    return (
+        display_df[
+            [
+                "cuenca",
+                "producto_display",
+                "production_display",
+                "unit_display",
+                "basin_type_display",
+                "ubicacion_display",
+            ]
+        ]
+        .rename(
+            columns={
+                "cuenca": "Cuenca",
+                "producto_display": "Producto",
+                "production_display": "Producción",
+                "unit_display": "Unidad",
+                "basin_type_display": "Tipo de cuenca",
+                "ubicacion_display": "Ubicación",
+            }
+        )
+        .sort_values("Cuenca")
+        .reset_index(drop=True)
+    )
+
+
+def build_cuenca_geo_technical_table(
+    gdf_map: gpd.GeoDataFrame,
+    match_df: Optional[pd.DataFrame],
+) -> pd.DataFrame:
+    """Detalle técnico del cruce geoespacial para QA (no va al tooltip principal)."""
+    base = gdf_map.drop(columns="geometry", errors="ignore")[
+        ["cuenca", "match_status", "equivalencia_usada", "origen_geo"]
+    ].copy()
+
+    if match_df is not None and "cuenca_geo" in match_df.columns:
+        obs_map = (
+            match_df.dropna(subset=["cuenca_geo"])
+            .drop_duplicates("cuenca_geo")
+            .set_index("cuenca_geo")["observacion"]
+        )
+        base["observacion"] = base["cuenca"].map(obs_map).fillna("—")
+    else:
+        base["observacion"] = "—"
+
+    return base.sort_values("cuenca").reset_index(drop=True)
+
+
+def build_cuenca_choropleth(gdf_map: gpd.GeoDataFrame, titulo: str, colorbar_title: str) -> go.Figure:
+    """Coroplético por cuenca; color numérico en ``produccion``, tooltip solo campos de negocio."""
+    plot_df = add_cuenca_map_display_fields(gdf_map.copy())
+    plot_df["map_id"] = plot_df.index.astype(str)
 
     geojson = json.loads(plot_df[["map_id", "geometry"]].to_json())
-    cols_plot = [
-        "map_id",
+    hover_cols = [
         "cuenca",
-        "producto",
-        "periodo_desde",
-        "periodo_hasta",
-        "metrica",
-        "produccion",
-        "produccion_txt",
-        "tipo",
-        "ubicacion",
-        "origen_geo",
-        "match_status",
-        "equivalencia_usada",
+        "producto_display",
+        "period_display",
+        "metrica_display",
+        "production_display",
+        "unit_display",
+        "basin_type_display",
+        "ubicacion_display",
     ]
+    cols_plot = ["map_id", "produccion", *hover_cols]
     plot_attrs = plot_df[[c for c in cols_plot if c in plot_df.columns]].copy()
 
     fig = px.choropleth_map(
@@ -246,24 +349,10 @@ def build_cuenca_choropleth(gdf_map: gpd.GeoDataFrame, titulo: str, colorbar_tit
         center=MAP_CENTER,
         opacity=0.72,
         title=titulo,
-        hover_name="cuenca",
-        hover_data={
-            "cuenca": False,
-            "producto": True,
-            "periodo_desde": True,
-            "periodo_hasta": True,
-            "metrica": True,
-            "produccion_txt": True,
-            "tipo": True,
-            "ubicacion": True,
-            "origen_geo": True,
-            "match_status": True,
-            "equivalencia_usada": True,
-            "map_id": False,
-            "produccion": False,
-        },
+        custom_data=hover_cols,
         labels={"produccion": colorbar_title},
     )
+    fig.update_traces(hovertemplate=CUENCA_MAP_HOVER_TEMPLATE)
     fig.update_layout(
         height=560,
         margin={"r": 0, "t": 56, "l": 0, "b": 0},
@@ -524,6 +613,24 @@ else:
         )
         fig_mapa = build_cuenca_choropleth(gdf_mapa, mapa_titulo, colorbar_title)
         st.plotly_chart(fig_mapa, use_container_width=True)
+
+        st.markdown("**Producción por cuenca (vista resumida)**")
+        st.dataframe(
+            build_cuenca_user_table(gdf_mapa),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        with st.expander("Ver detalle técnico del cruce geoespacial"):
+            st.caption(
+                "Información técnica de validación del cruce entre geometría y producción SESCO. "
+                "No forma parte del análisis principal."
+            )
+            st.dataframe(
+                build_cuenca_geo_technical_table(gdf_mapa, match_report_df),
+                use_container_width=True,
+                hide_index=True,
+            )
 
     st.markdown("**Control de cobertura (rango seleccionado)**")
     st.dataframe(control_df, use_container_width=True, hide_index=True)
