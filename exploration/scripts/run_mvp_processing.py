@@ -13,8 +13,8 @@ Uso (desde la raíz del repo)::
 
 Notes
 -----
-No genera ``sesco_latest_periods_by_view.csv`` ni otros auxiliares del
-dashboard; ejecutar después la notebook ``03_validacion_final_sesco.ipynb``.
+También exporta auxiliares del dashboard (``sesco_latest_periods_by_view.csv``,
+etc.) con la misma lógica que la notebook ``03_validacion_final_sesco.ipynb``.
 """
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ import sys
 from sesco_processing import (
     SESCO_RESOURCES_MVP,
     ensure_raw_snapshot,
+    export_dashboard_auxiliaries,
     export_unified,
     process_all_resources,
     resolve_raw_dir,
@@ -69,8 +70,12 @@ def main() -> int:
         print("No se generó dataset unificado.", file=sys.stderr)
         return 1
     unified_path, valid_path = export_unified(df_unified, df_valid)
+    latest_path, config_path, totales_path = export_dashboard_auxiliaries(df_unified)
     print(f"\nUnificado: {unified_path} ({len(df_unified):,} filas)")
     print(f"Validaciones: {valid_path}")
+    print(f"Últimos períodos: {latest_path}")
+    print(f"Config dashboard: {config_path}")
+    print(f"Totales por vista: {totales_path}")
     return 0
 
 

@@ -1,0 +1,32 @@
+cuenca_sesco,cuenca_sesco_norm,cuenca_geo,origen_geo,match_status,equivalencia_usada,observacion
+ARGENTINA NORTE,ARGENTINA NORTE,,,sin_geometria,,
+AUSTRAL,AUSTRAL,AUSTRAL MARINA,productiva,match_equivalencia_manual,AUSTRAL MARINA -> AUSTRAL,Pendiente AUSTRAL
+CAÑADON ASFALTO,CANADON ASFALTO,CAÑADON ASFALTO,no_productiva,match_directo,,
+CUYANA,CUYANA,CUYANA,productiva,match_directo,,
+DEL COLORADO,DEL COLORADO,,,sin_geometria,,
+FUERA DE CUENCA,FUERA DE CUENCA,,,sin_geometria,,
+GENERAL LEVALLE,GENERAL LEVALLE,,,sin_geometria,,
+GOLFO SAN JORGE,GOLFO SAN JORGE,GOLFO SAN JORGE,productiva,match_directo,,
+LAS SALINAS,LAS SALINAS,,,sin_geometria,,
+LOS BOLSONES,LOS BOLSONES,,,sin_geometria,,
+MALVINAS,MALVINAS,MALVINAS,no_productiva,match_directo,,
+MALVINAS OESTE,MALVINAS OESTE,,,sin_geometria,,
+MERCEDES,MERCEDES,MERCEDES,no_productiva,match_directo,,
+NEUQUINA,NEUQUINA,NEUQUINA,productiva,match_directo,,
+NORESTE,NORESTE,NORESTE,no_productiva,match_directo,,
+NOROESTE,NOROESTE,NOROESTE,productiva,match_directo,,
+ÑIRIHUAU,NIRIHUAU,ÑIRIHUAU,no_productiva,match_directo,,
+,,ARGENTINA,no_productiva,sin_produccion_sesco,,Sin homólogo SESCO cuenca
+,,BOLSONES INTERMONTANOS,no_productiva,sin_produccion_sesco,,Sin homólogo SESCO cuenca
+,,CLAROMECO,no_productiva,sin_produccion_sesco,,Sin homólogo SESCO cuenca
+,,COLORADO MARINA,no_productiva,sin_produccion_sesco,,Sin homólogo SESCO cuenca
+,,DEL SALADO,no_productiva,sin_produccion_sesco,,Sin homólogo SESCO cuenca
+,,EL TRANQUILO,no_productiva,sin_produccion_sesco,,Sin homólogo SESCO cuenca
+,,LEVALLE,no_productiva,sin_produccion_sesco,,Sin homólogo SESCO cuenca
+,,MACACHIN,no_productiva,sin_produccion_sesco,,Sin homólogo SESCO cuenca
+,,MALVINAS NORTE,no_productiva,sin_produccion_sesco,,Sin homólogo SESCO cuenca
+,,MALVINAS ORIENTAL,no_productiva,sin_produccion_sesco,,Sin homólogo SESCO cuenca
+,,PENINSULA VALDÉS,no_productiva,sin_produccion_sesco,,Sin homólogo SESCO cuenca
+,,RAWSON,no_productiva,sin_produccion_sesco,,Sin homólogo SESCO cuenca
+,,SAN JULIAN,no_productiva,sin_produccion_sesco,,Sin homólogo SESCO cuenca
+,,SAN LUIS,no_productiva,sin_produccion_sesco,,Sin homólogo SESCO cuenca

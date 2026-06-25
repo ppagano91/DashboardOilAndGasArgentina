@@ -1995,6 +1995,74 @@ def export_unified(
     return unified_path, valid_path
 
 
+def export_dashboard_auxiliaries(
+    df_unified: pd.DataFrame,
+    processed_dir: Path | None = None,
+) -> tuple[Path, Path, Path]:
+    """
+    Exporta auxiliares del dashboard (misma lógica que notebook 03).
+
+    Parameters
+    ----------
+    df_unified : pd.DataFrame
+        Dataset unificado ya validado por recurso.
+    processed_dir : Path, optional
+        Directorio de salida.
+
+    Returns
+    -------
+    tuple[Path, Path, Path]
+        Rutas a ``sesco_latest_periods_by_view.csv``,
+        ``sesco_dashboard_config.csv`` y ``sesco_totales_por_vista_resumen.csv``.
+    """
+    processed_dir = processed_dir or PROCESSED_DIR
+    processed_dir.mkdir(parents=True, exist_ok=True)
+
+    periodos_por_vista = (
+        df_unified.groupby(["producto", "agrupador_tipo"], as_index=False)
+        .agg(
+            periodo_min=("periodo_str", "min"),
+            periodo_max=("periodo_str", "max"),
+            cantidad_periodos=("periodo_str", "nunique"),
+            cantidad_filas=("periodo_str", "size"),
+            cantidad_agrupadores=("agrupador_nombre", "nunique"),
+        )
+        .sort_values(["producto", "agrupador_tipo"])
+        .reset_index(drop=True)
+    )
+
+    latest_path = processed_dir / "sesco_latest_periods_by_view.csv"
+    (
+        periodos_por_vista[["producto", "agrupador_tipo", "periodo_max"]]
+        .rename(columns={"periodo_max": "latest_valid_period"})
+        .to_csv(latest_path, encoding="utf-8-sig", index=False)
+    )
+
+    config_path = processed_dir / "sesco_dashboard_config.csv"
+    (
+        periodos_por_vista[
+            [
+                "producto",
+                "agrupador_tipo",
+                "periodo_min",
+                "periodo_max",
+                "cantidad_agrupadores",
+            ]
+        ]
+        .rename(columns={"periodo_max": "latest_valid_period"})
+        .sort_values(["producto", "agrupador_tipo"])
+        .reset_index(drop=True)
+        .to_csv(config_path, encoding="utf-8-sig", index=False)
+    )
+
+    totales_path = processed_dir / "sesco_totales_por_vista_resumen.csv"
+    build_totals_comparison_table(df_unified).to_csv(
+        totales_path, encoding="utf-8-sig", index=False
+    )
+
+    return latest_path, config_path, totales_path
+
+
 # ---------------------------------------------------------------------------
 # Backward-compatible aliases (Spanish names). Remove after notebooks migrate.
 # ---------------------------------------------------------------------------

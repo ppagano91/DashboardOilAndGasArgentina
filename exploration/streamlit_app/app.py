@@ -68,7 +68,7 @@ st.markdown(
 )
 
 
-@st.cache_data
+@st.cache_data(ttl=3600)
 def load_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     base_path = Path(__file__).resolve().parents[1] / "data" / "processed"
 
@@ -100,7 +100,7 @@ def normalize_cuenca_name(value: str) -> str:
     return text
 
 
-@st.cache_data
+@st.cache_data(ttl=3600)
 def load_geo_consolidado() -> Optional[gpd.GeoDataFrame]:
     if not GEOJSON_CONSOLIDADO_PATH.is_file():
         return None
@@ -114,14 +114,14 @@ def load_geo_consolidado() -> Optional[gpd.GeoDataFrame]:
     return gdf
 
 
-@st.cache_data
+@st.cache_data(ttl=3600)
 def load_match_report() -> Optional[pd.DataFrame]:
     if not MATCH_REPORT_PATH.is_file():
         return None
     return pd.read_csv(MATCH_REPORT_PATH)
 
 
-@st.cache_data
+@st.cache_data(ttl=3600)
 def load_geo_coverage_summary() -> Optional[pd.DataFrame]:
     if not GEO_COVERAGE_SUMMARY_PATH.is_file():
         return None

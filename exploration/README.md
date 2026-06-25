@@ -83,15 +83,15 @@ exploration/
 │   ├── sesco_processing.py                ← módulo central ETL
 │   └── run_mvp_processing.py
 ├── data/
-│   ├── raw/                               ← fuentes descargadas (gitignored salvo .gitkeep)
-│   │   ├── snapshots/                     ← snapshots diarios versionados (YYYY-MM-DD)
+│   ├── raw/                               ← fuentes; versionado: latest/ y cuencas geo
+│   │   ├── snapshots/                     ← histórico local (no versionado en Git)
 │   │   │   └── YYYY-MM-DD/
 │   │   │       ├── petroleo_provincia.csv
 │   │   │       ├── … (6 recursos MVP)
 │   │   │       └── manifest.json
-│   │   ├── latest/                        ← copia de conveniencia del snapshot más reciente
+│   │   ├── latest/                        ← último snapshot (versionado en Git)
 │   │   └── *.csv                          ← obsoletos si no usan nombre canónico (ignorados)
-│   └── processed/                         ← derivados analíticos (gitignored salvo .gitkeep)
+│   └── processed/                         ← derivados analíticos (versionados en Git)
 └── streamlit_app/
     └── app.py
 ```
@@ -101,11 +101,14 @@ exploration/
 | Elemento | Estado |
 |----------|--------|
 | `scripts/__init__.py` | **No existe.** Los notebooks agregan `scripts/` a `sys.path` e importan `sesco_processing` directamente. |
-| `data/raw/*` y `data/processed/*` | **Gitignored** (`.gitignore` raíz). Cada entorno los regenera con scripts/notebooks. |
+| `data/raw/*` (excepto `latest/` y cuencas geo) | **Gitignored** — descargas obsoletas y snapshots históricos. |
+| `data/processed/*` | **Versionado** en Git para despliegue Streamlit sin CKAN en runtime. |
+| `data/raw/latest/` | **Versionado** — manifest + 6 CSV MVP del último snapshot (~3 MB). |
+| `data/raw/snapshots/` | **Gitignored** — histórico completo por fecha; crece con el tiempo. |
 | `.venv/` | Entorno virtual local opcional; no versionado. |
 | `notebooks/_out.txt` | Residuo de ejecución/debug; puede ignorarse o eliminarse. |
 | `data/raw/*.csv` (nombres no canónicos) | Archivos obsoletos de descargas anteriores; **no se leen**; pueden eliminarse o renombrarse manualmente. |
-| `data/raw/snapshots/` | Snapshots versionados por fecha (`YYYY-MM-DD`); cada carpeta incluye los 6 CSV MVP + `manifest.json`. |
+| `data/raw/snapshots/` | Snapshots locales por fecha (`YYYY-MM-DD`); **no versionados** en Git; cada carpeta incluye los 6 CSV MVP + `manifest.json`. |
 | `data/raw/latest/` | Copia (no symlink) del snapshot más reciente válido; el procesamiento la usa por defecto si existe. |
 | `data/processed/cuencas_productivas_geo.geojson` | **Legacy** — solo 5 productivas; no usar. |
 | `data/processed/cuencas_productivas_sesco_join_preview.csv` | **Legacy** — vista previa antigua; no usar. |
@@ -273,11 +276,11 @@ Ubicación: `exploration/scripts/`. Ejecutar desde la **raíz del repositorio** 
 | **Responsabilidad** | Orquestar el procesamiento de los 6 recursos MVP por consola. |
 | **Cuándo usarlo** | Regenerar el unificado sin abrir Jupyter. |
 | **Entradas** | `sp.SESCO_RESOURCES_MVP`; CKAN + raw en `latest/` o resuelto por `resolve_raw_resource_path`. |
-| **Salidas** | Unificado + validaciones por recurso (ver §8). |
-| **Funciones principales** | `main()` → opcional `ensure_raw_snapshot()` + `process_all_resources()` + `export_unified()`. |
+| **Salidas** | Unificado, validaciones por recurso y auxiliares dashboard (ver §8). |
+| **Funciones principales** | `main()` → opcional `ensure_raw_snapshot()` + `process_all_resources()` + `export_unified()` + `export_dashboard_auxiliaries()`. |
 | **CLI** | `python exploration/scripts/run_mvp_processing.py` |
 | **CLI con snapshot** | `--update-raw` (descarga solo si CKAN cambió) · `--force-download` (fuerza descarga del día) |
-| **No genera** | Archivos de la notebook 03 (`sesco_latest_periods_by_view.csv`, etc.). |
+| **Auxiliares dashboard** | `sesco_latest_periods_by_view.csv`, `sesco_dashboard_config.csv`, `sesco_totales_por_vista_resumen.csv` (misma lógica que notebook 03). |
 
 ---
 
@@ -439,7 +442,7 @@ No hay política automática de limpieza. Borrar carpetas antiguas en `snapshots
 
 ## 8. Datos processed
 
-Ubicación: `exploration/data/processed/`. Artefactos **generados** por scripts/notebooks. No editar manualmente salvo casos puntuales documentados. **Gitignored** en el repositorio.
+Ubicación: `exploration/data/processed/`. Artefactos **generados** por scripts/notebooks. No editar manualmente salvo casos puntuales documentados. **Versionados** en Git para despliegue Streamlit (ver [§19](#19-github-actions-y-despliegue)).
 
 ### 8.1 Tabular SESCO
 
@@ -674,7 +677,17 @@ jupyter notebook notebooks/01_exploracion_sesco.ipynb
 
 En Cursor/VS Code: abrir el `.ipynb` y seleccionar el kernel de `exploration/.venv`.
 
-**Orden recomendado:** 01 (opcional si ya se confía en el módulo) → 02 o `run_mvp_processing.py` → **03 (obligatorio para Streamlit)** → 04 (si se usa el mapa).
+**Orden recomendado:** 01 (opcional si ya se confía en el módulo) → 02 o `run_mvp_processing.py` → 04 (si se usa el mapa). La notebook 03 sigue siendo referencia de validación manual; el CLI ya exporta sus artefactos principales.
+
+### Streamlit
+
+Desde la raíz del repositorio:
+
+```bash
+streamlit run exploration/streamlit_app/app.py
+```
+
+El dashboard lee **solo** `exploration/data/processed/`; no consulta CKAN en tiempo de ejecución. Las funciones `@st.cache_data` usan TTL de 3600 s.
 
 ### Imports y `sys.path`
 
@@ -691,14 +704,6 @@ import sesco_processing as sp
 ```bash
 set PYTHONPATH=exploration/scripts
 python -c "import sesco_processing; print(sesco_processing.PACKAGE_ID)"
-```
-
-### Streamlit
-
-Desde la raíz del repositorio:
-
-```bash
-streamlit run exploration/streamlit_app/app.py
 ```
 
 ---
@@ -725,8 +730,8 @@ streamlit run exploration/streamlit_app/app.py
 | Necesidad | Dónde actuar |
 |-----------|--------------|
 | Cambiar procesamiento SESCO | `sesco_processing.py` + notebooks 01–02 + `run_mvp_processing.py` |
-| Regenerar datasets tabulares | `python exploration/scripts/run_mvp_processing.py` + notebook 03 |
-| Cambiar validaciones / KPIs de último período | Notebook 03 |
+| Regenerar datasets tabulares | `python exploration/scripts/run_mvp_processing.py --update-raw` |
+| Cambiar validaciones / KPIs de último período | Notebook 03 o `export_dashboard_auxiliaries()` en `sesco_processing.py` |
 | Cambiar visualización Streamlit | `streamlit_app/app.py` |
 | Cambiar reglas geoespaciales o equivalencias | Notebook 04 → regenerar GeoJSON y reportes |
 | Auditar fuentes CKAN | `inspect_ckan_resources.py` |
@@ -743,12 +748,12 @@ streamlit run exploration/streamlit_app/app.py
 
 1. Completar conclusiones de la notebook 01 y alinear observaciones del match report (`AUSTRAL`).
 2. Agregar `scripts/__init__.py` (opcional).
-3. Script CLI para exports de notebook 03 (`run_dashboard_exports.py`).
+3. Script CLI para exports de notebook 03 — **implementado** en `export_dashboard_auxiliaries()` + `run_mvp_processing.py`.
 4. Validar equivalencias geo pendientes (LEVALLE, BOLSONES, COLORADO, ARGENTINA NORTE, Malvinas Oeste).
 5. Ampliar capas o reglas para las **7 cuencas SESCO sin geometría**.
 6. Limpiar archivos legacy geo; eliminar manualmente `notebooks/_out.txt` si no se necesita.
 7. Eliminar `print` de depuración en `process_all_resources`.
-8. Añadir `streamlit` a `requirements.txt`.
+8. ~~Añadir `streamlit` a `requirements.txt`.~~ Hecho.
 9. Explorar pozos/trayectorias en nueva notebook cuando haya fuente.
 10. Preparar migración ETL → PostgreSQL/PostGIS y contratos de API.
 
@@ -762,6 +767,62 @@ streamlit run exploration/streamlit_app/app.py
 | [documentacion_geoespacial_cuencas.md](documentacion_geoespacial_cuencas.md) | Cierre de notebook 04: flujo consolidado, cobertura, equivalencias, GeoJSON, limitaciones del mapa. |
 | [../README.md](../README.md) | Visión general del repositorio y etapas del producto. |
 | [../docs/revision_documentacion_exploration.md](../docs/revision_documentacion_exploration.md) | Auditoría de junio 2026 (parcialmente desactualizada respecto a notebook 04 y geo; usar este README como referencia principal). |
+
+---
+
+## 19. GitHub Actions y despliegue
+
+### Actualización automática diaria
+
+Workflow: [`.github/workflows/update_sesco_data.yml`](../.github/workflows/update_sesco_data.yml)
+
+| Aspecto | Detalle |
+|---------|---------|
+| **Disparadores** | `schedule` diario + `workflow_dispatch` (manual) |
+| **Horario** | `cron: 0 9 * * *` UTC = **06:00** `America/Argentina/Buenos_Aires` (UTC-3) |
+| **Comando** | `python exploration/scripts/run_mvp_processing.py --update-raw` |
+| **Dependencias** | `pip install -r exploration/requirements.txt` |
+| **Commit** | Solo si hay cambios en `exploration/data/processed/` o `exploration/data/raw/latest/` |
+| **Autor del commit** | `github-actions[bot]` |
+| **Permisos** | `contents: write` |
+
+**Qué hace el pipeline:** consulta CKAN; si hay cambios (o no hay snapshot previo), descarga los 6 CSV MVP a `raw/snapshots/` y sincroniza `raw/latest/`; procesa y exporta `processed/`; el workflow commitea y pushea únicamente cuando `git diff` detecta cambios.
+
+**Limitaciones:**
+
+- GitHub Actions programa en UTC; puede haber retraso de minutos u horas en repos poco activos.
+- Snapshots históricos en `raw/snapshots/` no se suben al repo (solo `latest/`).
+- Capas geoespaciales (`cuencas_*.geojson`) no se regeneran en este workflow (fuentes estáticas en `raw/` + notebook 04).
+- Streamlit Community Cloud puede tardar en reflejar CSV nuevos tras un push (caché TTL 1 h o redeploy).
+
+### Actualización manual local
+
+```bash
+pip install -r exploration/requirements.txt
+python exploration/scripts/run_mvp_processing.py --update-raw
+```
+
+Variantes: sin tocar CKAN (`python exploration/scripts/run_mvp_processing.py` usando `raw/latest/` existente); forzar descarga (`--force-download`).
+
+### Política de versionado (resumen)
+
+| Ruta | Versionado | Motivo |
+|------|------------|--------|
+| `data/processed/` | Sí | Dashboard y Cloud sin CKAN en runtime |
+| `data/raw/latest/` | Sí | Trazabilidad del último raw (~3 MB) |
+| `data/raw/cuencas_sedimentarias_*.csv` | Sí | Fuentes geo estáticas |
+| `data/raw/snapshots/` | No | Duplicación histórica |
+| `data/raw/*.csv` obsoletos | No | Nombres no canónicos de descargas viejas |
+
+### Despliegue en Streamlit Community Cloud
+
+1. Publicar el repo en GitHub con `exploration/data/processed/` incluido.
+2. En [share.streamlit.io](https://share.streamlit.io), **New app** → conectar el repositorio.
+3. **Main file path:** `exploration/streamlit_app/app.py`
+4. **Python version:** 3.11+ recomendado.
+5. **Requirements:** `exploration/requirements.txt` (Advanced settings).
+6. Deploy; verificar KPIs, filtros y mapa por cuenca.
+7. Opcional: habilitar workflow **Update SESCO data** en GitHub (Settings → Actions → General → permitir workflows de escritura).
 
 ---
 
