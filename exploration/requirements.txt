@@ -7,3 +7,4 @@ geopandas>=0.14.0
 shapely>=2.0.0
 plotly>=5.18.0
 folium>=0.15.0
+streamlit>=1.32.0

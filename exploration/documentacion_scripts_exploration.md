@@ -249,7 +249,7 @@ Toda la lógica de transformación reside en el módulo; el script define `main(
 ### CLI
 
 ```bash
-python exploration/scripts/run_mvp_processing.py                  # procesa desde raw/latest/ o legacy
+python exploration/scripts/run_mvp_processing.py                  # procesa desde raw/latest/ o raw/ canónico
 python exploration/scripts/run_mvp_processing.py --update-raw       # snapshot CKAN si hay cambios, luego procesa
 python exploration/scripts/run_mvp_processing.py --force-download # fuerza descarga del día, luego procesa
 ```
@@ -286,7 +286,7 @@ El módulo implementa una **mini-pipeline** con etapas encadenadas: descubrimien
 | `USER_AGENT` | Cabecera HTTP identificable | Todas las descargas HTTP | Buena práctica ante APIs públicas |
 | `SCRIPT_DIR` | Directorio del módulo | Derivación de paths | Rutas relativas al código, no al CWD |
 | `EXPLORATION_DIR` | Carpeta `exploration/` | Derivación de `RAW_DIR`, `PROCESSED_DIR` | Separar código de datos |
-| `RAW_DIR` | `exploration/data/raw/` | `download_csv`, `process_resource`, legacy | CSV descargados sin transformar |
+| `RAW_DIR` | `exploration/data/raw/` | `download_csv`, `process_resource`, fallback canónico | CSV con nombre `{resource_key}.csv` |
 | `RAW_SNAPSHOTS_DIR` | `exploration/data/raw/snapshots/` | `ensure_raw_snapshot`, `get_latest_snapshot_dir` | Snapshots diarios versionados |
 | `RAW_LATEST_DIR` | `exploration/data/raw/latest/` | `sync_latest_from_snapshot`, `resolve_raw_dir` | Copia del snapshot más reciente |
 | `PROCESSED_DIR` | `exploration/data/processed/` | Todas las exportaciones | Salida analítica del MVP |
@@ -299,7 +299,7 @@ El módulo implementa una **mini-pipeline** con etapas encadenadas: descubrimien
 
 ### Configuración de recursos (externa al módulo)
 
-La configuración MVP vive en `sesco_processing.py` (`SESCO_RESOURCES_MVP`) y se replica en la notebook 02. Cada entrada es un `dict` con:
+La configuración MVP vive en `sesco_processing.py` (`SESCO_RESOURCES_MVP`). Notebook 02 y `run_mvp_processing.py` importan esa constante; **no duplicar** el dict en notebooks.
 
 | Clave | Significado |
 |-------|-------------|
@@ -433,8 +433,11 @@ A partir de junio 2026, el código interno de `sesco_processing.py` usa **inglé
 | `has_resource_changed` | Compara metadata actual vs anterior (`id`, `url`, `last_modified`, etc.). |
 | `ensure_raw_snapshot` | Orquesta consulta CKAN, comparación, descarga y sync de `latest/`. |
 | `sync_latest_from_snapshot` | Copia CSV + manifest a `raw/latest/` (no symlink). |
-| `resolve_raw_dir` | `latest/` si válido; si no, `RAW_DIR` legacy. |
-| `snapshot_filename` | Nombre canónico `{resource_key}.csv`. |
+| `resolve_raw_dir` | Directorio preferido para lote (`latest/` o `raw/`) | `process_all_resources` |
+| `resolve_raw_resource_path` | Path concreto por `resource_key` | `process_resource`, notebooks |
+| `get_resource_local_filename` | Nombre canónico `{resource_key}.csv` | snapshots, manifest, lectura |
+| `build_manifest_resource_entry` | Entrada enriquecida para manifest | `ensure_raw_snapshot` |
+| `snapshot_filename` | Alias de `get_resource_local_filename` | compatibilidad |
 
 **Estructura:**
 
@@ -468,7 +471,9 @@ exploration/data/raw/
   "ckan_url": "https://datos.gob.ar/api/3/action/package_show?id=energia-produccion-petroleo-gas-sesco",
   "resources": {
     "petroleo_provincia": {
-      "id": "abc123",
+      "resource_key": "petroleo_provincia",
+      "local_file": "petroleo_provincia.csv",
+      "resource_id": "abc123",
       "name": "Producción de petróleo promedio diaria por provincia",
       "url": "https://datos.gob.ar/dataset/.../download/....csv",
       "format": "CSV",
@@ -478,13 +483,30 @@ exploration/data/raw/
       "last_modified": "2026-05-15T10:00:00",
       "cache_last_updated": null,
       "revision_timestamp": null,
-      "hash": null
+      "hash": null,
+      "downloaded": true,
+      "reason": "ckan_changed"
     }
   }
 }
 ```
 
-Los CSV legacy sueltos en `raw/` (nombres antiguos) siguen siendo legibles como fallback vía `infer_raw_filename`; no se eliminan automáticamente.
+| resource_key | archivo local canónico |
+|--------------|------------------------|
+| petroleo_provincia | petroleo_provincia.csv |
+| gas_provincia | gas_provincia.csv |
+| petroleo_cuenca | petroleo_cuenca.csv |
+| gas_cuenca | gas_cuenca.csv |
+| petroleo_empresa | petroleo_empresa.csv |
+| gas_empresa | gas_empresa.csv |
+
+**Resolución de path:** `resolve_raw_resource_path` → `latest/` > último snapshot > `raw/{canonical}` (solo nombre canónico exacto).
+
+**Retención:** limpieza manual de `snapshots/`; sin política automática.
+
+**Notebook 01:** usa `ensure_raw_snapshot()` + `resolve_raw_resource_path("petroleo_provincia")`.
+
+El fallback manual en `exploration/data/raw/` solo acepta nombres canónicos. Los archivos antiguos con nombres derivados de CKAN no se leen automáticamente. Si se quieren reutilizar, deben renombrarse manualmente al nombre canónico correspondiente.
 
 #### `read_csv`
 
@@ -538,8 +560,9 @@ Los CSV legacy sueltos en `raw/` (nombres antiguos) siguen siendo legibles como 
 
 #### `infer_raw_filename`
 
-- **Propósito:** Nombre de archivo en `data/raw/`.
-- **Lógica:** Mapa legacy para `petroleo_provincia` → nombre histórico; si no, nombre desde URL o `{resource_key}.csv`.
+- **Propósito:** Alias de `get_resource_local_filename` (compatibilidad hacia atrás).
+- **Salida:** `{resource_key}.csv` — único nombre válido.
+- **Notas:** Los parámetros `resource_name` y `url` se ignoran; no se infieren nombres desde CKAN.
 
 ---
 

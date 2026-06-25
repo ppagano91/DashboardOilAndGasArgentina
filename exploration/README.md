@@ -90,7 +90,7 @@ exploration/
 │   │   │       ├── … (6 recursos MVP)
 │   │   │       └── manifest.json
 │   │   ├── latest/                        ← copia de conveniencia del snapshot más reciente
-│   │   └── *.csv                          ← legacy (descargas sueltas anteriores; no borrar automáticamente)
+│   │   └── *.csv                          ← obsoletos si no usan nombre canónico (ignorados)
 │   └── processed/                         ← derivados analíticos (gitignored salvo .gitkeep)
 └── streamlit_app/
     └── app.py
@@ -104,7 +104,7 @@ exploration/
 | `data/raw/*` y `data/processed/*` | **Gitignored** (`.gitignore` raíz). Cada entorno los regenera con scripts/notebooks. |
 | `.venv/` | Entorno virtual local opcional; no versionado. |
 | `notebooks/_out.txt` | Residuo de ejecución/debug; puede ignorarse o eliminarse. |
-| `data/raw/produccion_petroleo_promedio_diaria_por_provincia_v1.csv` | Posible **legacy** / corrida anterior del mismo recurso; el pipeline MVP usa la clave `petroleo_provincia`. |
+| `data/raw/*.csv` (nombres no canónicos) | Archivos obsoletos de descargas anteriores; **no se leen**; pueden eliminarse o renombrarse manualmente. |
 | `data/raw/snapshots/` | Snapshots versionados por fecha (`YYYY-MM-DD`); cada carpeta incluye los 6 CSV MVP + `manifest.json`. |
 | `data/raw/latest/` | Copia (no symlink) del snapshot más reciente válido; el procesamiento la usa por defecto si existe. |
 | `data/processed/cuencas_productivas_geo.geojson` | **Legacy** — solo 5 productivas; no usar. |
@@ -156,7 +156,7 @@ Ubicación: `exploration/notebooks/`. Ejecutar en orden numérico la primera vez
 |---------|---------|
 | **Objetivo** | Primera exploración del dataset SESCO: validar CKAN, inspeccionar recursos y analizar en profundidad **un recurso piloto** (petróleo por provincia). |
 | **Pregunta que responde** | ¿Qué publica SESCO, con qué columnas, qué calidad tiene y cómo se puede unificar? |
-| **Entradas** | API CKAN; CSV descargado de petróleo por provincia en `data/raw/`. |
+| **Entradas** | CKAN; CSV raw vía `resolve_raw_resource_path` (`latest/` → snapshot → `raw/` canónico). |
 | **Pasos principales** | Consulta CKAN → listado de recursos → filtro por keywords → descarga CSV → inspección de columnas, nulos, rangos temporales → funciones auxiliares de inspección → normalización tentativa al modelo común → detección de período incompleto (regla 50 %) → validaciones → gráficos exploratorios → exportación de CSV procesado del recurso piloto. |
 | **Salidas** | CSV procesado del recurso piloto en `data/processed/`; conclusiones metodológicas; base de funciones que migraron a `sesco_processing.py`. |
 | **Decisiones metodológicas** | Definición del esquema analítico común; regla de exclusión del último mes incompleto; no sumar vistas de agregación. |
@@ -174,7 +174,7 @@ Ubicación: `exploration/notebooks/`. Ejecutar en orden numérico la primera vez
 |---------|---------|
 | **Objetivo** | Generalizar el procesamiento a los **6 recursos MVP** y construir el dataset unificado. |
 | **Pregunta que responde** | ¿El modelo común funciona para provincia, cuenca y empresa × petróleo y gas? |
-| **Entradas** | Config `SESCO_RESOURCES` (6 entradas); CKAN vía `sesco_processing`; CSV raw (descarga automática si falta). |
+| **Entradas** | `sp.SESCO_RESOURCES_MVP`; CKAN + raw en `latest/` o resuelto por `resolve_raw_resource_path`. |
 | **Pasos principales** | Imports + `sys.path` → listar CKAN → `sp.process_all_resources()` → `sp.export_unified()` → `sp.validate_unified_dataset()` → `sp.build_totals_comparison_table()` → gráficos exploratorios con advertencias metodológicas. |
 | **Salidas** | Por recurso: `{resource_key}_model_clean.csv`, `{resource_key}_periodos_resumen.csv`. Globales: `sesco_produccion_model_clean.csv` (~33.912 filas), `sesco_validaciones_resumen.csv`. |
 | **Decisiones metodológicas** | Totales nacionales solo con vista provincia; comparación entre vistas sin sumarlas; último período válido por `producto + agrupador_tipo` vía `get_valid_periods_by_group`. |
@@ -272,7 +272,7 @@ Ubicación: `exploration/scripts/`. Ejecutar desde la **raíz del repositorio** 
 |-------|---------|
 | **Responsabilidad** | Orquestar el procesamiento de los 6 recursos MVP por consola. |
 | **Cuándo usarlo** | Regenerar el unificado sin abrir Jupyter. |
-| **Entradas** | `SESCO_RESOURCES_MVP`; CKAN + raw en `latest/` o legacy en `raw/`. |
+| **Entradas** | `sp.SESCO_RESOURCES_MVP`; CKAN + raw en `latest/` o resuelto por `resolve_raw_resource_path`. |
 | **Salidas** | Unificado + validaciones por recurso (ver §8). |
 | **Funciones principales** | `main()` → opcional `ensure_raw_snapshot()` + `process_all_resources()` + `export_unified()`. |
 | **CLI** | `python exploration/scripts/run_mvp_processing.py` |
@@ -304,7 +304,7 @@ Ubicación: `exploration/scripts/`. Ejecutar desde la **raíz del repositorio** 
 
 **Detalle completo de funciones:** [documentacion_scripts_exploration.md](documentacion_scripts_exploration.md).
 
-**Nota de mantenimiento:** CSV legacy sueltos en `data/raw/` (fuera de `snapshots/` y `latest/`) siguen siendo legibles como fallback; no se eliminan automáticamente.
+**Regla de nombres raw:** solo se leen archivos con nombre canónico `{resource_key}.csv`. El fallback manual en `exploration/data/raw/` solo acepta nombres canónicos. Los archivos antiguos con nombres derivados de CKAN no se leen automáticamente. Si se quieren reutilizar, deben renombrarse manualmente al nombre canónico correspondiente.
 
 ### Snapshots raw y manifest
 
@@ -328,7 +328,9 @@ Ejemplo de `manifest.json`:
   "ckan_url": "https://datos.gob.ar/api/3/action/package_show?id=energia-produccion-petroleo-gas-sesco",
   "resources": {
     "petroleo_provincia": {
-      "id": "abc123",
+      "resource_key": "petroleo_provincia",
+      "local_file": "petroleo_provincia.csv",
+      "resource_id": "abc123",
       "name": "Producción de petróleo promedio diaria por provincia",
       "url": "https://...",
       "format": "CSV",
@@ -338,13 +340,38 @@ Ejemplo de `manifest.json`:
       "last_modified": "2026-05-15T10:00:00",
       "cache_last_updated": null,
       "revision_timestamp": null,
-      "hash": null
+      "hash": null,
+      "downloaded": true,
+      "reason": "ckan_changed"
     }
   }
 }
 ```
 
-Los nombres de archivo en snapshots y `latest/` son `{resource_key}.csv` (ej. `petroleo_provincia.csv`).
+### Nombres canónicos de archivos raw
+
+| resource_key | archivo local canónico |
+|--------------|------------------------|
+| petroleo_provincia | petroleo_provincia.csv |
+| gas_provincia | gas_provincia.csv |
+| petroleo_cuenca | petroleo_cuenca.csv |
+| gas_cuenca | gas_cuenca.csv |
+| petroleo_empresa | petroleo_empresa.csv |
+| gas_empresa | gas_empresa.csv |
+
+Función única: `get_resource_local_filename(resource_key)` en `sesco_processing.py`.
+
+### Resolución de path raw
+
+`resolve_raw_resource_path(resource_key)` busca en este orden (solo nombre canónico exacto):
+
+1. `raw/latest/{canonical}`
+2. Último `snapshots/YYYY-MM-DD/{canonical}`
+3. `raw/{canonical}`
+
+Si no encuentra el archivo, falla con un error que lista las rutas revisadas.
+
+Los CSV sueltos en `raw/` con nombres antiguos (derivados de CKAN) **no se leen**; quedan ignorados hasta renombrarlos manualmente o ejecutar `ensure_raw_snapshot()`.
 
 ---
 
@@ -370,23 +397,43 @@ Documentación extendida: [§10 de documentacion_scripts_exploration.md](documen
 
 ## 7. Datos raw
 
-Ubicación: `exploration/data/raw/`. Son **datos fuente o descargados**; no deben editarse manualmente salvo reemplazo controlado de fuentes. **No se versionan** en git (solo `.gitkeep`).
+Ubicación principal: `exploration/data/raw/latest/` (copia del snapshot activo) y `exploration/data/raw/snapshots/`. Los CSV sueltos en `raw/` con nombres no canónicos son **obsoletos e ignorados** por el pipeline.
 
-| Archivo | Origen | Descripción | Usado por | Estado |
-|---------|--------|-------------|-----------|--------|
-| `produccion_petroleo_promedio_diaria_por_provincia.csv` | CKAN / descarga MVP | Petróleo por provincia | `sesco_processing`, notebooks | Activo |
-| `produccin-de-gas-promedio-diaria-por-provincia.csv` | CKAN | Gas por provincia | idem | Activo |
-| `produccin-de-petrleo-promedio-diaria-por-cuenca.csv` | CKAN | Petróleo por cuenca | idem | Activo |
-| `produccin-de-gas-promedio-diaria-por-cuenca.csv` | CKAN | Gas por cuenca | idem | Activo |
-| `produccin-de-petrleo-promedio-diaria-por-empresa.csv` | CKAN | Petróleo por empresa | idem | Activo |
-| `produccin-de-gas-promedio-diaria-por-empresa.csv` | CKAN | Gas por empresa | idem | Activo |
-| `produccion_petroleo_promedio_diaria_por_provincia_v1.csv` | Descarga anterior | Posible duplicado legacy del recurso provincia petróleo | — | **Legacy** / revisar |
-| `cuencas_sedimentarias_productivas.csv` | Fuente geográfica externa | Polígonos cuencas productivas | Notebook 04 | Activo |
-| `cuencas_sedimentarias_no_productivas.csv` | Fuente geográfica externa | Polígonos cuencas no productivas | Notebook 04 | Activo |
+### Nombres canónicos (fuente de verdad)
 
-Los nombres con `produccin` / `petrleo` provienen de inferencia de URL CKAN; el pipeline resuelve por `resource_key`, no solo por nombre de archivo.
+| resource_key | archivo local canónico |
+|--------------|------------------------|
+| petroleo_provincia | petroleo_provincia.csv |
+| gas_provincia | gas_provincia.csv |
+| petroleo_cuenca | petroleo_cuenca.csv |
+| gas_cuenca | gas_cuenca.csv |
+| petroleo_empresa | petroleo_empresa.csv |
+| gas_empresa | gas_empresa.csv |
 
-**Forzar actualización de raw SESCO:** borrar el CSV local correspondiente; `download_csv` no re-descarga si el archivo ya existe.
+Función única: `get_resource_local_filename(resource_key)`.
+
+### Notebooks y configuración
+
+| Notebook | Uso de snapshots / config |
+|----------|---------------------------|
+| **01** | `sp.ensure_raw_snapshot()` + `resolve_raw_resource_path("petroleo_provincia")` |
+| **02** | `sp.SESCO_RESOURCES_MVP` (sin dict duplicado) + `process_all_resources` |
+
+### Retención de snapshots
+
+No hay política automática de limpieza. Borrar carpetas antiguas en `snapshots/` es **responsabilidad manual del usuario**.
+
+### Otros archivos raw (no SESCO tabular)
+
+| Archivo | Origen | Descripción | Usado por |
+|---------|--------|-------------|-----------|
+| `cuencas_sedimentarias_productivas.csv` | Fuente geo | Polígonos WKT cuencas productivas | Notebook 04 |
+| `cuencas_sedimentarias_no_productivas.csv` | Fuente geo | Polígonos WKT cuencas no productivas | Notebook 04 |
+| `produccion_petroleo_promedio_diaria_por_provincia_v1.csv` | Descarga anterior | **Obsoleto** — no se lee; renombrar a `petroleo_provincia.csv` o regenerar snapshot |
+
+**Forzar actualización raw SESCO:** `python exploration/scripts/run_mvp_processing.py --update-raw` o `--force-download`. No se re-descargan archivos si CKAN no cambió (salvo `--force-download`).
+
+**Limpieza de snapshots antiguos:** manual; no hay retención automática.
 
 ---
 
@@ -591,11 +638,11 @@ python -m venv .venv
 
 pip install -r requirements.txt
 
-# Dashboard (no incluido en requirements.txt)
-pip install streamlit
+# Dashboard (incluido en requirements.txt)
+pip install -r requirements.txt
 ```
 
-Dependencias principales: `pandas`, `jupyter`, `matplotlib`, `geopandas`, `shapely`, `plotly`, `folium`. La notebook 01 usa `requests`; los **scripts** usan `urllib` de la stdlib.
+Dependencias principales: `pandas`, `jupyter`, `matplotlib`, `geopandas`, `shapely`, `plotly`, `folium`, `streamlit`. La notebook 01 usa `requests`; los **scripts** usan `urllib` de la stdlib.
 
 ### Scripts
 
@@ -695,11 +742,11 @@ streamlit run exploration/streamlit_app/app.py
 ## 17. Próximos pasos recomendados
 
 1. Completar conclusiones de la notebook 01 y alinear observaciones del match report (`AUSTRAL`).
-2. Extraer `SESCO_RESOURCES_MVP` a módulo compartido (`config.py`) y agregar `scripts/__init__.py`.
+2. Agregar `scripts/__init__.py` (opcional).
 3. Script CLI para exports de notebook 03 (`run_dashboard_exports.py`).
 4. Validar equivalencias geo pendientes (LEVALLE, BOLSONES, COLORADO, ARGENTINA NORTE, Malvinas Oeste).
 5. Ampliar capas o reglas para las **7 cuencas SESCO sin geometría**.
-6. Limpiar archivos legacy geo y `_out.txt`.
+6. Limpiar archivos legacy geo; eliminar manualmente `notebooks/_out.txt` si no se necesita.
 7. Eliminar `print` de depuración en `process_all_resources`.
 8. Añadir `streamlit` a `requirements.txt`.
 9. Explorar pozos/trayectorias en nueva notebook cuando haya fuente.

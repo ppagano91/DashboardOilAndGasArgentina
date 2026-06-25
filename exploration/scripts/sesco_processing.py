@@ -33,7 +33,6 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
 
 import pandas as pd
 
@@ -101,7 +100,7 @@ MANIFEST_RESOURCE_FIELDS = [
 
 # Campos usados para detectar cambios entre snapshots (CKAN puede omitir algunos).
 RESOURCE_CHANGE_FIELDS = [
-    "id",
+    "resource_id",
     "url",
     "last_modified",
     "cache_last_updated",
@@ -383,9 +382,31 @@ def find_resource_by_name(
     return df_match.iloc[0]
 
 
-def snapshot_filename(resource_key: str) -> str:
-    """Nombre canónico del CSV raw en snapshots y ``latest/``."""
+def get_resource_local_filename(resource_key: str) -> str:
+    """
+    Nombre canónico del CSV raw local para un recurso MVP.
+
+    Parameters
+    ----------
+    resource_key : str
+        Clave interna (ej. ``petroleo_provincia``).
+
+    Returns
+    -------
+    str
+        ``{resource_key}.csv`` — usado en snapshots, ``latest/`` y ``raw/``.
+    """
+    if resource_key not in SESCO_RESOURCES_MVP:
+        raise KeyError(
+            f"resource_key desconocido: {resource_key!r}. "
+            f"Claves MVP: {sorted(SESCO_RESOURCES_MVP)}"
+        )
     return f"{resource_key}.csv"
+
+
+def snapshot_filename(resource_key: str) -> str:
+    """Alias de ``get_resource_local_filename`` (compatibilidad)."""
+    return get_resource_local_filename(resource_key)
 
 
 def get_today_snapshot_dir(base_dir: Path | None = None) -> Path:
@@ -496,7 +517,7 @@ def get_latest_snapshot_dir(snapshots_dir: Path | None = None) -> Path | None:
 
 def build_resource_metadata(resource: dict[str, Any]) -> dict[str, Any]:
     """
-    Extrae metadata relevante de un recurso CKAN para el manifest.
+    Extrae metadata relevante de un recurso CKAN (campos crudos de la API).
 
     Parameters
     ----------
@@ -509,6 +530,58 @@ def build_resource_metadata(resource: dict[str, Any]) -> dict[str, Any]:
         Subconjunto de campos CKAN; ``None`` si el campo no existe en la fuente.
     """
     return {field: resource.get(field) for field in MANIFEST_RESOURCE_FIELDS}
+
+
+def build_manifest_resource_entry(
+    resource_key: str,
+    ckan_resource: dict[str, Any],
+    *,
+    downloaded: bool = True,
+    reason: str = "ckan_download",
+) -> dict[str, Any]:
+    """
+    Construye la entrada de un recurso para ``manifest.json``.
+
+    Parameters
+    ----------
+    resource_key : str
+        Clave interna MVP.
+    ckan_resource : dict
+        Recurso completo desde CKAN.
+    downloaded : bool
+        Si el CSV se descargó en este snapshot.
+    reason : str
+        Motivo del snapshot (``initial_snapshot``, ``ckan_changed``, ``force_download``, etc.).
+
+    Returns
+    -------
+    dict
+        Entrada con ``local_file`` canónico y metadata CKAN normalizada.
+    """
+    ckan_meta = build_resource_metadata(ckan_resource)
+    return {
+        "resource_key": resource_key,
+        "local_file": get_resource_local_filename(resource_key),
+        "resource_id": ckan_meta.get("id"),
+        "name": ckan_meta.get("name"),
+        "url": ckan_meta.get("url"),
+        "format": ckan_meta.get("format"),
+        "mimetype": ckan_meta.get("mimetype"),
+        "size": ckan_meta.get("size"),
+        "created": ckan_meta.get("created"),
+        "last_modified": ckan_meta.get("last_modified"),
+        "cache_last_updated": ckan_meta.get("cache_last_updated"),
+        "revision_timestamp": ckan_meta.get("revision_timestamp"),
+        "hash": ckan_meta.get("hash"),
+        "downloaded": downloaded,
+        "reason": reason,
+    }
+
+
+def _manifest_field_value(entry: dict[str, Any], field: str) -> Any:
+    if field == "resource_id":
+        return entry.get("resource_id") or entry.get("id")
+    return entry.get(field)
 
 
 def has_resource_changed(current_metadata: dict[str, Any], previous_metadata: dict[str, Any]) -> bool:
@@ -537,8 +610,8 @@ def has_resource_changed(current_metadata: dict[str, Any], previous_metadata: di
         return True
 
     for field in RESOURCE_CHANGE_FIELDS:
-        current = current_metadata.get(field)
-        previous = previous_metadata.get(field)
+        current = _manifest_field_value(current_metadata, field)
+        previous = _manifest_field_value(previous_metadata, field)
         if current is None and previous is None:
             continue
         if str(current) != str(previous):
@@ -557,6 +630,9 @@ def _collect_mvp_resource_metadata(
     package: dict[str, Any],
     resources_df: pd.DataFrame,
     resources_config: dict[str, dict[str, Any]],
+    *,
+    downloaded: bool = True,
+    reason: str = "ckan_download",
 ) -> dict[str, dict[str, Any]]:
     metadata: dict[str, dict[str, Any]] = {}
     for resource_key, config in resources_config.items():
@@ -570,7 +646,12 @@ def _collect_mvp_resource_metadata(
                 f"Recurso no encontrado en CKAN: {config['nombre_recurso']} ({resource_key})"
             )
         full_resource = _find_full_resource(package, row["id"])
-        metadata[resource_key] = build_resource_metadata(full_resource)
+        metadata[resource_key] = build_manifest_resource_entry(
+            resource_key,
+            full_resource,
+            downloaded=downloaded,
+            reason=reason,
+        )
     return metadata
 
 
@@ -630,7 +711,7 @@ def _download_mvp_resources(
             raise ValueError(
                 f"Recurso no encontrado en CKAN: {config['nombre_recurso']} ({resource_key})"
             )
-        destination = snapshot_dir / snapshot_filename(resource_key)
+        destination = snapshot_dir / get_resource_local_filename(resource_key)
         download_csv(row["url"], destination, overwrite=True)
 
 
@@ -667,16 +748,21 @@ def ensure_raw_snapshot(
     resources_config = resources_config or SESCO_RESOURCES_MVP
     package = fetch_ckan_package()
     resources_df = list_resources(package)
-    current_metadata = _collect_mvp_resource_metadata(
-        package, resources_df, resources_config
-    )
 
     latest_snapshot = get_latest_snapshot_dir()
     previous_manifest = load_manifest(latest_snapshot) if latest_snapshot else {}
     today_dir = get_today_snapshot_dir()
 
+    preview_metadata = _collect_mvp_resource_metadata(
+        package,
+        resources_df,
+        resources_config,
+        downloaded=False,
+        reason="metadata_check",
+    )
+
     needs_download = force_download or _any_resource_changed(
-        current_metadata, previous_manifest
+        preview_metadata, previous_manifest
     )
 
     if not needs_download:
@@ -687,6 +773,21 @@ def ensure_raw_snapshot(
             if update_latest:
                 sync_latest_from_snapshot(target)
             return target
+
+    if force_download:
+        download_reason = "force_download"
+    elif not previous_manifest.get("resources"):
+        download_reason = "initial_snapshot"
+    else:
+        download_reason = "ckan_changed"
+
+    current_metadata = _collect_mvp_resource_metadata(
+        package,
+        resources_df,
+        resources_config,
+        downloaded=True,
+        reason=download_reason,
+    )
 
     if today_dir.exists() and _is_valid_manifest(load_manifest(today_dir)):
         stamp = datetime.now().strftime("%H%M%S")
@@ -713,45 +814,116 @@ def ensure_raw_snapshot(
 
 def resolve_raw_dir() -> Path:
     """
-    Resuelve el directorio raw para procesamiento.
+    Resuelve el directorio raw preferido para procesamiento por lote.
 
     Returns
     -------
     Path
-        ``raw/latest/`` si existe con manifest válido; si no, ``RAW_DIR`` (legacy).
+        ``raw/latest/`` si existe con manifest válido; si no, ``RAW_DIR``.
+
+    Notes
+    -----
+    Para resolver el path de un recurso concreto, preferir ``resolve_raw_resource_path``.
     """
     if RAW_LATEST_DIR.is_dir() and _is_valid_manifest(load_manifest(RAW_LATEST_DIR)):
         return RAW_LATEST_DIR
     return RAW_DIR
 
 
-def infer_raw_filename(resource_key: str, resource_name: str, url: str) -> str:
+def resolve_raw_resource_path(
+    resource_key: str,
+    *,
+    verbose: bool = False,
+) -> Path:
     """
-    Deriva el nombre de archivo local en ``data/raw/``.
+    Devuelve el path del CSV raw canónico a leer para un recurso MVP.
 
     Parameters
     ----------
     resource_key : str
-        Clave interna del recurso (ej. ``petroleo_provincia``).
+        Clave interna (ej. ``petroleo_provincia``).
+    verbose : bool
+        Reservado; sin efecto (compatibilidad con llamadas existentes).
+
+    Returns
+    -------
+    Path
+        Archivo CSV existente con nombre canónico.
+
+    Raises
+    ------
+    FileNotFoundError
+        Si no existe el archivo canónico en ninguna ubicación revisada.
+
+    Notes
+    -----
+    Orden de búsqueda (solo nombres canónicos, coincidencia exacta):
+
+    1. ``raw/latest/{resource_key}.csv``
+    2. Último snapshot válido ``/{resource_key}.csv``
+    3. ``raw/{resource_key}.csv``
+
+    No se buscan nombres derivados de CKAN ni archivos históricos con otros nombres.
+    """
+    _ = verbose
+    canonical = get_resource_local_filename(resource_key)
+    latest_snapshot = get_latest_snapshot_dir()
+    snapshot_label = latest_snapshot.name if latest_snapshot else "<ninguno>"
+
+    candidates: list[tuple[Path, str]] = [
+        (RAW_LATEST_DIR / canonical, f"exploration/data/raw/latest/{canonical}"),
+    ]
+    if latest_snapshot is not None:
+        candidates.append(
+            (
+                latest_snapshot / canonical,
+                f"exploration/data/raw/snapshots/{snapshot_label}/{canonical}",
+            )
+        )
+    candidates.append((RAW_DIR / canonical, f"exploration/data/raw/{canonical}"))
+
+    checked_labels: list[str] = []
+    for path, label in candidates:
+        checked_labels.append(f"- {label}")
+        if path.is_file():
+            return path
+
+    locations = "\n".join(checked_labels)
+    raise FileNotFoundError(
+        f"No se encontró el archivo raw canónico para resource_key={resource_key!r}.\n"
+        f"Nombre esperado: {canonical}\n"
+        f"Ubicaciones revisadas:\n{locations}\n\n"
+        f"Para resolverlo:\n"
+        f"- ejecutar ensure_raw_snapshot(), o\n"
+        f"- renombrar manualmente el archivo al nombre canónico."
+    )
+
+
+def infer_raw_filename(resource_key: str, resource_name: str = "", url: str = "") -> str:
+    """
+    Devuelve el nombre canónico del CSV raw local.
+
+    Parameters
+    ----------
+    resource_key : str
+        Clave interna del recurso.
     resource_name : str
-        Nombre CKAN (reservado para futuras reglas; hoy solo afecta legacy).
+        Ignorado (compatibilidad hacia atrás).
     url : str
-        URL de descarga; se usa el último segmento del path si termina en ``.csv``.
+        Ignorado (compatibilidad hacia atrás).
 
     Returns
     -------
     str
-        Nombre de archivo para persistir el CSV raw.
+        Nombre canónico ``{resource_key}.csv``.
+
+    Notes
+    -----
+    Preferir ``get_resource_local_filename``. Los parámetros ``resource_name`` y
+    ``url`` se conservan solo para no romper firmas antiguas.
     """
-    legacy = {
-        "petroleo_provincia": "produccion_petroleo_promedio_diaria_por_provincia.csv",
-    }
-    if resource_key in legacy:
-        return legacy[resource_key]
-    parsed = Path(unquote(urlparse(url).path)).name
-    if parsed.lower().endswith(".csv"):
-        return parsed
-    return f"{resource_key}.csv"
+    _ = resource_name, url
+    return get_resource_local_filename(resource_key)
 
 
 def download_csv(
@@ -1570,16 +1742,16 @@ def process_resource(
 
     source_name = resource["name"]
     url = resource["url"]
-    raw_path = raw_dir / snapshot_filename(resource_key)
-    if not raw_path.exists():
-        raw_name = infer_raw_filename(resource_key, source_name, url)
-        raw_path = raw_dir / raw_name
 
-    if download_if_missing and not raw_path.exists():
-        download_csv(url, raw_path)
-        notes.append("descargado desde CKAN")
-    elif not raw_path.exists():
-        raise FileNotFoundError(f"CSV no encontrado: {raw_path}")
+    try:
+        raw_path = resolve_raw_resource_path(resource_key, verbose=verbose)
+    except FileNotFoundError:
+        if download_if_missing:
+            raw_path = RAW_DIR / get_resource_local_filename(resource_key)
+            download_csv(url, raw_path, overwrite=True)
+            notes.append("descargado desde CKAN")
+        else:
+            raise
 
     df_raw = read_csv(raw_path)
     df_norm = normalize_column_names(df_raw)
@@ -1664,7 +1836,7 @@ def process_all_resources(
     package : dict, optional
         Paquete CKAN precargado.
     raw_dir : Path, optional
-        Directorio de CSV raw; por defecto ``resolve_raw_dir()`` (``latest/`` o legacy).
+        Directorio de CSV raw; por defecto ``resolve_raw_dir()`` (``latest/`` o ``raw/``).
     verbose : bool
         Logs por recurso y errores.
 
@@ -1721,7 +1893,7 @@ def process_all_resources(
                         "cantidad_produccion_negativa": 0,
                         "observaciones": f"error: {exc}",
                     },
-                    raw_path=raw_dir / snapshot_filename(resource_key),
+                    raw_path=raw_dir / get_resource_local_filename(resource_key),
                     export_path=PROCESSED_DIR / f"{resource_key}_model_clean.csv",
                     notes=[str(exc)],
                 )
