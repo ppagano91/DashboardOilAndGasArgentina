@@ -1,6 +1,7 @@
 import json
 import re
 import unicodedata
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -12,6 +13,9 @@ import streamlit as st
 
 APP_DIR = Path(__file__).resolve().parent
 PROCESSED_DIR = APP_DIR.parent / "data" / "processed"
+RAW_LATEST_DIR = APP_DIR.parent / "data" / "raw" / "latest"
+MANIFEST_PATH = RAW_LATEST_DIR / "manifest.json"
+PROCESSED_MAIN_PATH = PROCESSED_DIR / "sesco_produccion_model_clean.csv"
 GEOJSON_CONSOLIDADO_PATH = PROCESSED_DIR / "cuencas_sedimentarias_consolidadas.geojson"
 MATCH_REPORT_PATH = PROCESSED_DIR / "cuencas_sesco_match_report.csv"
 PROJECT_SUMMARY_PATH = APP_DIR / "assets" / "resumen_proyecto.md"
@@ -252,6 +256,167 @@ def translate_display_columns(df: pd.DataFrame) -> pd.DataFrame:
     if not rename_map:
         return df
     return df.rename(columns=rename_map)
+
+
+DOWNLOAD_COLUMNS = [
+    "periodo_str",
+    "anio",
+    "mes",
+    "producto",
+    "agrupador_tipo",
+    "agrupador_nombre",
+    "tipo_recurso",
+    "produccion",
+    "source_resource",
+]
+
+
+def format_agrupador_tipo_plural(agrupador_tipo: str) -> str:
+    labels = {"provincia": "provincias", "cuenca": "cuencas", "empresa": "empresas"}
+    return labels.get(agrupador_tipo, f"{agrupador_tipo}s")
+
+
+def format_production_value(value: float) -> str:
+    return f"{value:,.2f}"
+
+
+def parse_manifest_timestamp(value: str) -> Optional[datetime]:
+    """Interpreta fechas del manifest (ISO o YYYY-MM-DD)."""
+    text = str(value).strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(text[:19], fmt)
+        except ValueError:
+            continue
+    try:
+        return datetime.strptime(text[:10], "%Y-%m-%d")
+    except ValueError:
+        pass
+    parsed = pd.to_datetime(text, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    return parsed.to_pydatetime()
+
+
+def format_update_datetime(dt: datetime) -> str:
+    if dt.hour or dt.minute or dt.second:
+        return dt.strftime("%d/%m/%Y %H:%M")
+    return dt.strftime("%d/%m/%Y")
+
+
+def get_data_update_display() -> Optional[str]:
+    """Última actualización local legible para el usuario (sin rutas ni nombres técnicos)."""
+    if MANIFEST_PATH.is_file():
+        try:
+            manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+            for key in ("created_at", "snapshot_date", "downloaded_at"):
+                raw = manifest.get(key)
+                if not raw:
+                    continue
+                parsed = parse_manifest_timestamp(str(raw))
+                if parsed is not None:
+                    return format_update_datetime(parsed)
+        except (json.JSONDecodeError, OSError, TypeError):
+            pass
+
+    if PROCESSED_MAIN_PATH.is_file():
+        mtime = datetime.fromtimestamp(PROCESSED_MAIN_PATH.stat().st_mtime)
+        return format_update_datetime(mtime)
+
+    return None
+
+
+def build_filtered_download_csv(df_filtered: pd.DataFrame) -> bytes:
+    """CSV de exportación con columnas de negocio; no altera el dataframe interno."""
+    export_cols = [c for c in DOWNLOAD_COLUMNS if c in df_filtered.columns]
+    export_df = translate_display_columns(df_filtered[export_cols].copy())
+    return export_df.to_csv(index=False).encode("utf-8")
+
+
+def build_hallazgos_destacados(
+    df_filtered: pd.DataFrame,
+    producto: str,
+    agrupador_tipo: str,
+) -> list[str]:
+    """Insights automáticos a partir de los datos filtrados (máx. 4)."""
+    if df_filtered.empty:
+        return ["No hay datos suficientes para generar hallazgos con los filtros actuales."]
+
+    unit = get_production_unit_display(producto)
+    agrupador_plural = format_agrupador_tipo_plural(agrupador_tipo)
+    hallazgos: list[str] = []
+
+    by_grouper = (
+        df_filtered.groupby("agrupador_nombre", as_index=False)["produccion"]
+        .sum()
+        .sort_values("produccion", ascending=False)
+    )
+    total = float(by_grouper["produccion"].sum())
+
+    if not by_grouper.empty and total > 0:
+        top = by_grouper.iloc[0]
+        hallazgos.append(
+            f"Principal {agrupador_tipo}: {top['agrupador_nombre']}, con "
+            f"{format_production_value(float(top['produccion']))} {unit}."
+        )
+
+        top5_sum = float(by_grouper.head(5)["produccion"].sum())
+        top5_pct = top5_sum / total * 100
+        hallazgos.append(
+            f"Los 5 principales agrupadores concentran el {top5_pct:.1f}% "
+            "de la producción seleccionada."
+        )
+
+    periods = sorted(df_filtered["periodo_dt"].dropna().unique())
+    if len(periods) >= 2:
+        first_p, last_p = periods[0], periods[-1]
+        first_total = float(
+            df_filtered.loc[df_filtered["periodo_dt"] == first_p, "produccion"].sum()
+        )
+        last_total = float(
+            df_filtered.loc[df_filtered["periodo_dt"] == last_p, "produccion"].sum()
+        )
+        if first_total != 0:
+            var_pct = (last_total - first_total) / first_total * 100
+            hallazgos.append(
+                f"La producción total varió {var_pct:+.1f}% entre "
+                f"{pd.Timestamp(first_p).strftime('%Y-%m')} y "
+                f"{pd.Timestamp(last_p).strftime('%Y-%m')}."
+            )
+
+    n_groupers = int(df_filtered["agrupador_nombre"].nunique())
+    hallazgos.append(f"La vista seleccionada incluye {n_groupers} {agrupador_plural}.")
+
+    return hallazgos[:4]
+
+
+def render_data_update_block(latest_valid_period: Optional[pd.Timestamp]) -> None:
+    """Bloque visible de frescura y procedencia de los datos."""
+    last_update_display = get_data_update_display()
+
+    st.markdown("### Actualización de datos")
+    st.info("Datos actualizados periódicamente desde SESCO / datos.gob.ar")
+
+    col_u1, col_u2 = st.columns(2)
+    with col_u1:
+        if last_update_display:
+            st.metric("Última actualización", last_update_display)
+        else:
+            st.metric(
+                "Última actualización",
+                "Actualización periódica automática configurada",
+            )
+    with col_u2:
+        if pd.notna(latest_valid_period):
+            st.metric("Último período disponible", latest_valid_period.strftime("%Y-%m"))
+        else:
+            st.metric("Último período disponible", "N/D")
+
+    st.caption(
+        "Fuente: SESCO / datos.gob.ar · Frecuencia: actualización periódica automática"
+    )
 
 
 def add_cuenca_map_display_fields(plot_df: pd.DataFrame) -> pd.DataFrame:
@@ -617,6 +782,10 @@ latest_slice = df_base[df_base["periodo_dt"] == latest_valid_period].copy()
 
 producto_label = "petróleo" if producto == "petroleo" else "gas"
 
+st.divider()
+render_data_update_block(latest_valid_period)
+st.divider()
+
 st.subheader("KPIs")
 col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -676,7 +845,7 @@ fig_evol = px.line(
     labels={"periodo_dt": "Período", "produccion": "Producción"},
     title=f"Evolución mensual de producción de {producto_label} — agregado por {agrupador_tipo}",
 )
-st.plotly_chart(fig_evol, use_container_width=True)
+st.plotly_chart(fig_evol, width='content')
 
 st.subheader(f"Ranking Top {top_n} en último período válido")
 if latest_slice.empty:
@@ -704,7 +873,7 @@ else:
         title=f"Top {top_n} por producción en {latest_valid_period.strftime('%Y-%m')}",
     )
     fig_rank.update_traces(textposition="outside")
-    st.plotly_chart(fig_rank, use_container_width=True)
+    st.plotly_chart(fig_rank, width='content')
 
 st.subheader("Evolución comparada Top 5 (últimos 12 períodos)")
 if latest_slice.empty:
@@ -741,7 +910,12 @@ else:
         labels={"periodo_dt": "Período", "produccion": "Producción", "agrupador_nombre": agrupador_tipo.title()},
         title=f"Top 5 de {agrupador_tipo} en los últimos 12 períodos válidos",
     )
-    st.plotly_chart(fig_comp, use_container_width=True)
+    st.plotly_chart(fig_comp, width='content')
+
+st.divider()
+st.subheader("Hallazgos destacados")
+for hallazgo in build_hallazgos_destacados(df_filtered, producto, agrupador_tipo):
+    st.markdown(f"- {hallazgo}")
 
 st.divider()
 st.subheader("🗺️ Mapa por cuenca sedimentaria")
@@ -771,7 +945,7 @@ st.info(
 gdf_consolidado = load_geo_consolidado()
 if gdf_consolidado is None:
     st.warning(
-        f"No se encontró la geometría consolidada esperada: `{GEOJSON_CONSOLIDADO_PATH}`"
+        "No se encontró la capa geográfica de cuencas sedimentarias necesaria para el mapa."
     )
 else:
     gdf_mapa, _ = build_cuenca_map_layer(
@@ -806,7 +980,7 @@ else:
             "Producción total (rango)" if metrica_mapa == METRICA_TOTAL else "Producción prom. mensual"
         )
         fig_mapa = build_cuenca_choropleth(gdf_mapa, mapa_titulo, colorbar_title)
-        st.plotly_chart(fig_mapa, use_container_width=True)
+        st.plotly_chart(fig_mapa, width='content')
 
         fig_part = build_cuenca_participacion_chart(
             gdf_mapa,
@@ -821,20 +995,22 @@ else:
                 "No hay cuencas con producción suficiente para mostrar participación en el rango seleccionado."
             )
         else:
-            st.plotly_chart(fig_part, use_container_width=True)
+            st.plotly_chart(fig_part, width='content')
 
         resumen_cuencas = build_cuenca_user_table(gdf_mapa)
         if resumen_cuencas.empty:
             st.info("No hay cuencas con producción para mostrar en el resumen.")
         else:
             st.markdown("**Resumen de producción por cuenca**")
-            st.dataframe(resumen_cuencas, use_container_width=True, hide_index=True)
+            st.dataframe(resumen_cuencas, width='content', hide_index=True)
 
 st.divider()
 st.subheader("Detalle de datos filtrados")
 
 cols_show = [
     "periodo_str",
+    "anio",
+    "mes",
     "producto",
     "agrupador_tipo",
     "agrupador_nombre",
@@ -844,15 +1020,14 @@ cols_show = [
 ]
 st.dataframe(
     translate_display_columns(df_filtered[cols_show]),
-    use_container_width=True,
+    width='content',
     hide_index=True,
 )
 
-csv_bytes = df_filtered[cols_show].to_csv(index=False).encode("utf-8")
 st.download_button(
-    label="Descargar datos filtrados (CSV)",
-    data=csv_bytes,
-    file_name=f"sesco_filtrado_{producto}_{agrupador_tipo}.csv",
+    label="Descargar datos filtrados",
+    data=build_filtered_download_csv(df_filtered),
+    file_name="sesco_datos_filtrados.csv",
     mime="text/csv",
 )
 
