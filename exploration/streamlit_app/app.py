@@ -10,10 +10,22 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-PROCESSED_DIR = Path(__file__).resolve().parents[1] / "data" / "processed"
+APP_DIR = Path(__file__).resolve().parent
+PROCESSED_DIR = APP_DIR.parent / "data" / "processed"
 GEOJSON_CONSOLIDADO_PATH = PROCESSED_DIR / "cuencas_sedimentarias_consolidadas.geojson"
 MATCH_REPORT_PATH = PROCESSED_DIR / "cuencas_sesco_match_report.csv"
-GEO_COVERAGE_SUMMARY_PATH = PROCESSED_DIR / "cuencas_sesco_geo_coverage_summary.csv"
+PROJECT_SUMMARY_PATH = APP_DIR / "assets" / "resumen_proyecto.md"
+
+AUTHOR_NAME = "Patricio Pagano"
+AUTHOR_LINKEDIN_URL = "https://www.linkedin.com/in/patricio-pagano"
+AUTHOR_EMAIL = "pagano.patricio@gmail.com"
+
+SESCO_DATASET_URL = (
+    "https://datos.gob.ar/ar/dataset/energia-produccion-petroleo-gas-sesco"
+)
+SESCO_CKAN_API_URL = (
+    "https://datos.gob.ar/api/3/action/package_show?id=energia-produccion-petroleo-gas-sesco"
+)
 
 # Equivalencia manual validada (geo → SESCO). No agregar otras sin confirmación explícita.
 CUENCA_EQUIVALENCIAS_GEO_A_SESCO = {
@@ -26,9 +38,6 @@ MAP_ZOOM = 3
 # Plotly MapLibre no expone minzoom de forma uniforme; el zoom inicial (~3) muestra el país
 # completo y los bounds actúan como límite de pan, no como recorte estricto del viewport.
 ARGENTINA_MAP_BOUNDS = {"west": -80.0, "east": -46.0, "south": -58.5, "north": -17.0}
-
-# Detalle técnico (match geoespacial, cobertura) oculto por defecto en la vista principal.
-SHOW_TECHNICAL_DETAILS_DEFAULT = False
 
 METRICA_TOTAL = "Producción total del rango"
 METRICA_PROMEDIO = "Producción promedio del rango"
@@ -60,21 +69,17 @@ st.set_page_config(
 
 st.title("Monitor de Producción Hidrocarburífera Argentina — SESCO")
 st.markdown(
-    """
-    Tablero exploratorio de producción mensual de petróleo y gas en Argentina,
-    construido con datos oficiales SESCO publicados en datos.gob.ar y obtenidos
-    mediante la API CKAN.
-    """
+    "Tablero exploratorio de producción mensual de petróleo y gas en Argentina. "
+    "Datos oficiales SESCO publicados en datos.gob.ar. "
+    "Recursos consultados mediante API CKAN."
 )
 
 
 @st.cache_data(ttl=3600)
 def load_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    base_path = Path(__file__).resolve().parents[1] / "data" / "processed"
-
-    df = pd.read_csv(base_path / "sesco_produccion_model_clean.csv")
-    latest_df = pd.read_csv(base_path / "sesco_latest_periods_by_view.csv")
-    config_df = pd.read_csv(base_path / "sesco_dashboard_config.csv")
+    df = pd.read_csv(PROCESSED_DIR / "sesco_produccion_model_clean.csv")
+    latest_df = pd.read_csv(PROCESSED_DIR / "sesco_latest_periods_by_view.csv")
+    config_df = pd.read_csv(PROCESSED_DIR / "sesco_dashboard_config.csv")
 
     df["periodo_dt"] = pd.to_datetime(df["periodo_dt"], errors="coerce")
     df = df.sort_values("periodo_dt").reset_index(drop=True)
@@ -119,13 +124,6 @@ def load_match_report() -> Optional[pd.DataFrame]:
     if not MATCH_REPORT_PATH.is_file():
         return None
     return pd.read_csv(MATCH_REPORT_PATH)
-
-
-@st.cache_data(ttl=3600)
-def load_geo_coverage_summary() -> Optional[pd.DataFrame]:
-    if not GEO_COVERAGE_SUMMARY_PATH.is_file():
-        return None
-    return pd.read_csv(GEO_COVERAGE_SUMMARY_PATH)
 
 
 def build_cuenca_map_layer(
@@ -256,7 +254,7 @@ def translate_display_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_cuenca_map_display_fields(plot_df: pd.DataFrame) -> pd.DataFrame:
-    """Campos auxiliares para tooltip y tabla de usuario (no reemplazan columnas técnicas de QA)."""
+    """Campos auxiliares para tooltip y tabla de usuario."""
     df = plot_df.copy()
     producto = str(df["producto"].iloc[0]) if "producto" in df.columns and len(df) else ""
     df["production_display"] = df["produccion"].apply(
@@ -285,7 +283,7 @@ def add_cuenca_map_display_fields(plot_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_cuenca_user_table(gdf_map: gpd.GeoDataFrame) -> pd.DataFrame:
-    """Tabla resumida para usuario final (sin columnas técnicas de merge geoespacial)."""
+    """Tabla resumida para usuario final."""
     display_df = add_cuenca_map_display_fields(
         gdf_map.drop(columns="geometry", errors="ignore")
     )
@@ -398,28 +396,6 @@ def build_cuenca_participacion_chart(
     return fig
 
 
-def build_cuenca_geo_technical_table(
-    gdf_map: gpd.GeoDataFrame,
-    match_df: Optional[pd.DataFrame],
-) -> pd.DataFrame:
-    """Detalle técnico del cruce geoespacial para QA (no va al tooltip principal)."""
-    base = gdf_map.drop(columns="geometry", errors="ignore")[
-        ["cuenca", "match_status", "equivalencia_usada", "origen_geo"]
-    ].copy()
-
-    if match_df is not None and "cuenca_geo" in match_df.columns:
-        obs_map = (
-            match_df.dropna(subset=["cuenca_geo"])
-            .drop_duplicates("cuenca_geo")
-            .set_index("cuenca_geo")["observacion"]
-        )
-        base["observacion"] = base["cuenca"].map(obs_map).fillna("—")
-    else:
-        base["observacion"] = "—"
-
-    return base.sort_values("cuenca").reset_index(drop=True)
-
-
 def build_cuenca_choropleth(gdf_map: gpd.GeoDataFrame, titulo: str, colorbar_title: str) -> go.Figure:
     """Coroplético por cuenca; color numérico en ``produccion``, tooltip solo campos de negocio."""
     plot_df = add_cuenca_map_display_fields(gdf_map.copy())
@@ -470,7 +446,6 @@ def build_cuenca_choropleth(gdf_map: gpd.GeoDataFrame, titulo: str, colorbar_tit
 
 df, latest_df, config_df = load_data()
 match_report_df = load_match_report()
-geo_coverage_df = load_geo_coverage_summary()
 
 
 def get_latest_valid_period(producto: str, agrupador_tipo: str) -> Optional[pd.Timestamp]:
@@ -517,10 +492,31 @@ period_range = st.sidebar.slider(
 
 top_n = st.sidebar.selectbox("Top N para ranking", options=[5, 10, 15, 20], index=1)
 
-show_technical_details = st.sidebar.checkbox(
-    "Mostrar detalles técnicos",
-    value=SHOW_TECHNICAL_DETAILS_DEFAULT,
+st.sidebar.divider()
+st.sidebar.markdown("### Fuente de datos")
+st.sidebar.markdown(
+    "Datos oficiales SESCO publicados en datos.gob.ar. "
+    "Recursos consultados mediante API CKAN."
 )
+st.sidebar.markdown(f"[Dataset oficial SESCO]({SESCO_DATASET_URL})")
+# st.sidebar.caption(f"[Metadata CKAN]({SESCO_CKAN_API_URL})")
+
+st.sidebar.divider()
+st.sidebar.markdown("### Contacto")
+st.sidebar.markdown(f"**Autor:** {AUTHOR_NAME}")
+st.sidebar.markdown(f"[LinkedIn]({AUTHOR_LINKEDIN_URL})")
+st.sidebar.markdown(f"[Email](mailto:{AUTHOR_EMAIL})")
+
+st.sidebar.divider()
+if PROJECT_SUMMARY_PATH.is_file():
+    st.sidebar.download_button(
+        label="Descargar resumen del proyecto",
+        data=PROJECT_SUMMARY_PATH.read_bytes(),
+        file_name="resumen_monitor_hidrocarburifero_sesco.md",
+        mime="text/markdown",
+    )
+else:
+    st.sidebar.caption("Resumen del proyecto no disponible.")
 
 df_filtered = df_base[
     (df_base["periodo_dt"] >= pd.to_datetime(period_range[0]))
@@ -689,7 +685,7 @@ if gdf_consolidado is None:
         f"No se encontró la geometría consolidada esperada: `{GEOJSON_CONSOLIDADO_PATH}`"
     )
 else:
-    gdf_mapa, control_df = build_cuenca_map_layer(
+    gdf_mapa, _ = build_cuenca_map_layer(
         gdf_consolidado,
         df,
         producto_mapa,
@@ -744,59 +740,6 @@ else:
         else:
             st.markdown("**Resumen de producción por cuenca**")
             st.dataframe(resumen_cuencas, use_container_width=True, hide_index=True)
-
-    if show_technical_details and gdf_consolidado is not None:
-        st.markdown("**Detalle técnico (desarrollo)**")
-
-        with st.expander("Cruce geoespacial y validación de cuencas", expanded=False):
-            if gdf_mapa is not None:
-                st.caption(
-                    "Información de validación del cruce entre geometría y producción SESCO."
-                )
-                st.dataframe(
-                    translate_display_columns(
-                        build_cuenca_geo_technical_table(gdf_mapa, match_report_df)
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-            st.markdown("**Control de cobertura (rango seleccionado)**")
-            st.dataframe(
-                translate_display_columns(control_df),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-            if match_report_df is None:
-                st.warning(f"No se encontró el reporte esperado: `{MATCH_REPORT_PATH}`")
-            else:
-                status_options = sorted(
-                    match_report_df["match_status"].dropna().astype(str).unique().tolist()
-                )
-                destacar = st.multiselect(
-                    "Filtrar por estado de match",
-                    options=status_options,
-                    default=status_options,
-                )
-                report_view = match_report_df.copy()
-                if destacar:
-                    report_view = report_view[report_view["match_status"].isin(destacar)]
-                st.dataframe(
-                    translate_display_columns(report_view),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-            if geo_coverage_df is not None:
-                st.caption("Resumen de cobertura geoespacial por producto (último período válido).")
-                st.dataframe(
-                    translate_display_columns(
-                        geo_coverage_df.loc[geo_coverage_df["producto"] == producto_mapa]
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                )
 
 st.divider()
 st.subheader("Detalle de datos filtrados")

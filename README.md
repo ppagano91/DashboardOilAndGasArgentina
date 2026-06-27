@@ -189,13 +189,7 @@ source .venv/Scripts/activate
 pip install -r exploration/requirements.txt
 ```
 
-`exploration/requirements.txt` incluye pandas, requests, matplotlib y Jupyter. **Streamlit y Plotly no están listados** en ese archivo; para el dashboard instalar además:
-
-```bash
-pip install streamlit plotly
-```
-
-Se recomienda **incorporar** `streamlit` y `plotly` a `exploration/requirements.txt` cuando se formalice el entorno.
+Incluye `pandas`, `requests`, `matplotlib`, `jupyter`, `geopandas`, `shapely`, `plotly`, `folium` y `streamlit`.
 
 **Levantar el dashboard:**
 
@@ -203,24 +197,59 @@ Se recomienda **incorporar** `streamlit` y `plotly` a `exploration/requirements.
 streamlit run exploration/streamlit_app/app.py
 ```
 
-Los CSV procesados deben existir en `exploration/data/processed/` (generados por los notebooks o por `run_mvp_processing.py`).
+Los CSV procesados deben existir en `exploration/data/processed/` (versionados en el repo o regenerados con el pipeline; ver [§10.1](#101-actualización-de-datos)).
+
+## 10.1 Actualización de datos
+
+El dashboard **no descarga desde CKAN** en tiempo de ejecución: lee archivos en `exploration/data/processed/`.
+
+**Actualización manual** (desde la raíz del repositorio):
+
+```bash
+python exploration/scripts/run_mvp_processing.py --update-raw
+```
+
+Consulta CKAN, crea snapshot raw solo si hay cambios, procesa los 6 recursos MVP y regenera `processed/` (incluye auxiliares del dashboard).
+
+**Actualización automática diaria:** GitHub Actions (workflow `.github/workflows/update_sesco_data.yml`) ejecuta el mismo comando y hace commit/push solo si detecta cambios en `exploration/data/processed/` o `exploration/data/raw/latest/`. Horario programado: **06:00** hora de Argentina (`America/Argentina/Buenos_Aires`, UTC-3). También disponible manualmente desde la pestaña **Actions** → **Update SESCO data** → **Run workflow**.
+
+**Limitación:** los schedules de GitHub Actions usan UTC y pueden retrasarse varios minutos (o más en repos inactivos); no garantizan ejecución exacta al minuto.
+
+### Política de versionado de datos
+
+| Ruta | ¿Versionado? | Motivo |
+|------|--------------|--------|
+| `exploration/data/processed/` | Sí | Necesario para Streamlit Community Cloud sin CKAN en runtime |
+| `exploration/data/raw/latest/` | Sí | Manifest + 6 CSV MVP (~3 MB); trazabilidad del último snapshot |
+| `exploration/data/raw/cuencas_sedimentarias_*.csv` | Sí | Fuentes geo estáticas (pequeñas) |
+| `exploration/data/raw/snapshots/` | No | Histórico duplicado; crece con el tiempo |
+| `exploration/data/raw/*.csv` (nombres obsoletos) | No | Descargas antiguas con nombres no canónicos |
+
+## 10.2 Despliegue en Streamlit Community Cloud
+
+1. Subir el repositorio a GitHub (rama principal con `exploration/data/processed/` presente).
+2. En [share.streamlit.io](https://share.streamlit.io), conectar el repositorio.
+3. **Main file path:** `exploration/streamlit_app/app.py`
+4. **Requirements file:** `exploration/requirements.txt`
+5. Desplegar y verificar que el dashboard carga KPIs y gráficos.
+6. Opcional: habilitar el workflow **Update SESCO data** en GitHub Actions para mantener los datos al día (requiere permisos de escritura en el repo para el bot de Actions).
+
+Tras cada actualización automática de datos, Streamlit Community Cloud puede requerir unos minutos o un redeploy manual para reflejar CSV nuevos (la caché de `@st.cache_data` usa TTL de 3600 s).
 
 ## 11. Flujo recomendado de trabajo
 
-1. Revisar o ejecutar los notebooks en `exploration/notebooks/`.
-2. Regenerar datasets en `exploration/data/processed/` si los datos fuente cambiaron.
-3. Revisar validaciones finales (`03_validacion_final_sesco.ipynb` y CSV de resumen).
-4. Ejecutar el dashboard Streamlit.
-5. Validar visualmente KPIs, rankings y series.
+1. Revisar o ejecutar los notebooks en `exploration/notebooks/` (opcional si se usa el CLI).
+2. Regenerar datasets con `python exploration/scripts/run_mvp_processing.py --update-raw` si los datos fuente cambiaron.
+3. Ejecutar el dashboard Streamlit.
+4. Validar visualmente KPIs, rankings y series.
+5. Publicar en GitHub y conectar Streamlit Community Cloud (ver [§10.2](#102-despliegue-en-streamlit-community-cloud)).
 6. Solo entonces avanzar con base de datos, API y frontend definitivo.
 
 ## 12. Próximos pasos
 
 - Mejorar el dashboard Streamlit (filtros, UX, notas de unidades).
 - Documentar **unidades de medida** por producto y recurso.
-- Aprovechar activamente los archivos auxiliares de validación y configuración.
 - Diseñar modelo **PostgreSQL / PostGIS**.
-- Formalizar **ETL** reproducible (scripts + jobs).
 - Implementar **FastAPI** sobre el modelo validado.
 - Desarrollar **frontend React + MapLibre** e incorporar **mapas**.
 
