@@ -41,6 +41,7 @@ ARGENTINA_MAP_BOUNDS = {"west": -80.0, "east": -46.0, "south": -58.5, "north": -
 
 METRICA_TOTAL = "Producción total del rango"
 METRICA_PROMEDIO = "Producción promedio del rango"
+DEFAULT_GROUPERS_COUNT = 5
 
 # Unidades según columnas raw SESCO: petroleo → produccion_petroleo_promedio_dia_m3;
 # gas → produccion_gas_promedio_dia_mm3 (miles de m³/día).
@@ -457,6 +458,62 @@ def get_latest_valid_period(producto: str, agrupador_tipo: str) -> Optional[pd.T
     return latest_row["latest_valid_period"].iloc[0]
 
 
+def get_top_groupers_for_default(
+    df: pd.DataFrame,
+    product: str,
+    grouping_type: str,
+    period_start: str | None,
+    period_end: str | None,
+    max_items: int = DEFAULT_GROUPERS_COUNT,
+) -> list[str]:
+    """Top agrupadores por producción total en el rango (o vacío si no hay datos)."""
+    subset = df[
+        (df["producto"] == product) & (df["agrupador_tipo"] == grouping_type)
+    ].copy()
+
+    if period_start is not None and period_end is not None:
+        start_dt = pd.to_datetime(period_start, format="%Y-%m", errors="coerce")
+        end_dt = pd.to_datetime(period_end, format="%Y-%m", errors="coerce")
+        if pd.notna(start_dt) and pd.notna(end_dt):
+            subset = subset[
+                (subset["periodo_dt"] >= start_dt) & (subset["periodo_dt"] <= end_dt)
+            ]
+
+    if subset.empty:
+        return []
+
+    ranked = (
+        subset.groupby("agrupador_nombre", as_index=False)["produccion"]
+        .sum()
+        .sort_values("produccion", ascending=False)
+    )
+    return ranked["agrupador_nombre"].head(max_items).tolist()
+
+
+def resolve_agrupadores_default(
+    df: pd.DataFrame,
+    product: str,
+    grouping_type: str,
+    options: list[str],
+    period_start: str | None,
+    period_end: str | None,
+    max_items: int = DEFAULT_GROUPERS_COUNT,
+) -> list[str]:
+    """Defaults del multiselect: Top N por producción, siempre subconjunto de options."""
+    if not options:
+        return []
+
+    top_names = get_top_groupers_for_default(
+        df, product, grouping_type, period_start, period_end, max_items
+    )
+    valid_top = [name for name in top_names if name in options]
+
+    if valid_top:
+        return valid_top
+
+    return options[: min(max_items, len(options))]
+
+
 st.sidebar.header("Filtros")
 
 producto_options = sorted(df["producto"].dropna().unique().tolist())
@@ -470,25 +527,54 @@ agrupador_tipo = st.sidebar.selectbox("Agrupador", options=agrupador_tipo_option
 df_base = df[(df["producto"] == producto) & (df["agrupador_tipo"] == agrupador_tipo)].copy()
 
 agrupador_nombre_options = sorted(df_base["agrupador_nombre"].dropna().unique().tolist())
-agrupadores_sel = st.sidebar.multiselect(
-    "Agrupadores",
-    options=agrupador_nombre_options,
-    # default=agrupador_nombre_options[: min(8, len(agrupador_nombre_options))],
-    default=["AUSTRAL","NEUQUINA","CUYANA","GOLFO SAN JORGE","ARGENTINA NORTE"],
-)
-
-if agrupadores_sel:
-    df_base = df_base[df_base["agrupador_nombre"].isin(agrupadores_sel)].copy()
 
 min_period = df_base["periodo_dt"].min()
 max_period = df_base["periodo_dt"].max()
-period_range = st.sidebar.slider(
-    "Rango de períodos",
-    min_value=min_period.to_pydatetime(),
-    max_value=max_period.to_pydatetime(),
-    value=(min_period.to_pydatetime(), max_period.to_pydatetime()),
-    format="YYYY-MM",
+if pd.isna(min_period) or pd.isna(max_period):
+    st.sidebar.warning("No hay períodos disponibles para la selección actual.")
+    period_range = (None, None)
+else:
+    period_range = st.sidebar.slider(
+        "Rango de períodos",
+        min_value=min_period.to_pydatetime(),
+        max_value=max_period.to_pydatetime(),
+        value=(min_period.to_pydatetime(), max_period.to_pydatetime()),
+        format="YYYY-MM",
+    )
+
+period_start_str = (
+    pd.to_datetime(period_range[0]).strftime("%Y-%m") if period_range[0] is not None else None
 )
+period_end_str = (
+    pd.to_datetime(period_range[1]).strftime("%Y-%m") if period_range[1] is not None else None
+)
+
+agrupadores_default = resolve_agrupadores_default(
+    df,
+    producto,
+    agrupador_tipo,
+    agrupador_nombre_options,
+    period_start_str,
+    period_end_str,
+    DEFAULT_GROUPERS_COUNT,
+)
+
+if not agrupador_nombre_options:
+    st.sidebar.warning(
+        f"No hay agrupadores disponibles para {format_producto_display(producto)} "
+        f"agrupado por {agrupador_tipo}."
+    )
+    agrupadores_sel: list[str] = []
+else:
+    agrupadores_sel = st.sidebar.multiselect(
+        "Agrupadores",
+        options=agrupador_nombre_options,
+        default=agrupadores_default,
+        key=f"agrupadores_{producto}_{agrupador_tipo}_{period_start_str}_{period_end_str}",
+    )
+
+if agrupadores_sel:
+    df_base = df_base[df_base["agrupador_nombre"].isin(agrupadores_sel)].copy()
 
 top_n = st.sidebar.selectbox("Top N para ranking", options=[5, 10, 15, 20], index=1)
 
@@ -518,10 +604,13 @@ if PROJECT_SUMMARY_PATH.is_file():
 else:
     st.sidebar.caption("Resumen del proyecto no disponible.")
 
-df_filtered = df_base[
-    (df_base["periodo_dt"] >= pd.to_datetime(period_range[0]))
-    & (df_base["periodo_dt"] <= pd.to_datetime(period_range[1]))
-].copy()
+if period_range[0] is not None and period_range[1] is not None:
+    df_filtered = df_base[
+        (df_base["periodo_dt"] >= pd.to_datetime(period_range[0]))
+        & (df_base["periodo_dt"] <= pd.to_datetime(period_range[1]))
+    ].copy()
+else:
+    df_filtered = df_base.iloc[0:0].copy()
 
 latest_valid_period = get_latest_valid_period(producto, agrupador_tipo)
 latest_slice = df_base[df_base["periodo_dt"] == latest_valid_period].copy()
