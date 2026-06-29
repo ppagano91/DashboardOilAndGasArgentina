@@ -845,7 +845,7 @@ fig_evol = px.line(
     labels={"periodo_dt": "Período", "produccion": "Producción"},
     title=f"Evolución mensual de producción de {producto_label} — agregado por {agrupador_tipo}",
 )
-st.plotly_chart(fig_evol, width='content')
+st.plotly_chart(fig_evol, width='stretch')
 
 st.subheader(f"Ranking Top {top_n} en último período válido")
 if latest_slice.empty:
@@ -873,7 +873,7 @@ else:
         title=f"Top {top_n} por producción en {latest_valid_period.strftime('%Y-%m')}",
     )
     fig_rank.update_traces(textposition="outside")
-    st.plotly_chart(fig_rank, width='content')
+    st.plotly_chart(fig_rank, width='stretch')
 
 st.subheader("Evolución comparada Top 5 (últimos 12 períodos)")
 if latest_slice.empty:
@@ -910,7 +910,7 @@ else:
         labels={"periodo_dt": "Período", "produccion": "Producción", "agrupador_nombre": agrupador_tipo.title()},
         title=f"Top 5 de {agrupador_tipo} en los últimos 12 períodos válidos",
     )
-    st.plotly_chart(fig_comp, width='content')
+    st.plotly_chart(fig_comp, width='stretch')
 
 st.divider()
 st.subheader("Hallazgos destacados")
@@ -980,7 +980,7 @@ else:
             "Producción total (rango)" if metrica_mapa == METRICA_TOTAL else "Producción prom. mensual"
         )
         fig_mapa = build_cuenca_choropleth(gdf_mapa, mapa_titulo, colorbar_title)
-        st.plotly_chart(fig_mapa, width='content')
+        st.plotly_chart(fig_mapa, width='stretch')
 
         fig_part = build_cuenca_participacion_chart(
             gdf_mapa,
@@ -995,14 +995,14 @@ else:
                 "No hay cuencas con producción suficiente para mostrar participación en el rango seleccionado."
             )
         else:
-            st.plotly_chart(fig_part, width='content')
+            st.plotly_chart(fig_part, width='stretch')
 
         resumen_cuencas = build_cuenca_user_table(gdf_mapa)
         if resumen_cuencas.empty:
             st.info("No hay cuencas con producción para mostrar en el resumen.")
         else:
             st.markdown("**Resumen de producción por cuenca**")
-            st.dataframe(resumen_cuencas, width='content', hide_index=True)
+            st.dataframe(resumen_cuencas, width='stretch', hide_index=True)
 
 st.divider()
 st.subheader("Detalle de datos filtrados")
@@ -1020,7 +1020,7 @@ cols_show = [
 ]
 st.dataframe(
     translate_display_columns(df_filtered[cols_show]),
-    width='content',
+    width='stretch',
     hide_index=True,
 )
 
