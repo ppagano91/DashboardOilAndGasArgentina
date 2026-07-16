@@ -12365,8 +12365,10 @@
 2026-04,2026-04-01,2026,4,gas,empresa,VISTA ENERGY ARGENTINA SAU,promedio_diario,1399.71066666667,Producción de gas promedio diaria por empresa
 2026-04,2026-04-01,2026,4,gas,empresa,YPF S.A.,promedio_diario,29604.3253333333,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,ALIANZA PETROLERA ARGENTINA S.A.,promedio_diario,48.5420967741936,Producción de gas promedio diaria por empresa
+2026-05,2026-05-01,2026,5,gas,empresa,ARGENTA ENERGIA S.A.,promedio_diario,0.0,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,AZRUGE S.A.,promedio_diario,6.02258064516129,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,BENTIA ENERGY S.A.,promedio_diario,554.246451612903,Producción de gas promedio diaria por empresa
+2026-05,2026-05-01,2026,5,gas,empresa,BREST S.A. DE SERVICIOS PETROLEROS,promedio_diario,67.2238709677419,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,CAPETROL ARGENTINA S.A.,promedio_diario,0.0,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,CAPETROL S.A.,promedio_diario,0.0,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,CAPEX S.A.,promedio_diario,1253.82806451613,Producción de gas promedio diaria por empresa
@@ -12379,18 +12381,23 @@
 2026-05,2026-05-01,2026,5,gas,empresa,CROWN POINT ENERGIA S.A.,promedio_diario,223.252161290323,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,Clear Petroleum S.A.,promedio_diario,41.748064516129,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,E.M.E.S.A,promedio_diario,2.28332258064516,Producción de gas promedio diaria por empresa
+2026-05,2026-05-01,2026,5,gas,empresa,EDHIPSA,promedio_diario,4.1041935483871,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,ENERGICON S.A.,promedio_diario,0.0,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,FLXS OGE S.A ,promedio_diario,889.842258064516,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,FOMICRUZ S.E.,promedio_diario,1.5,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,G Y G OIL SERVICE SRL,promedio_diario,2.86774193548387,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,GEOPARK ARGENTINA S.A.,promedio_diario,20.9496774193548,Producción de gas promedio diaria por empresa
+2026-05,2026-05-01,2026,5,gas,empresa,GEOPETROL DRILLING S.A.,promedio_diario,0.2,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,HATTRICK ENERGY SAS,promedio_diario,0.0,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,HIGH LUCK GROUP LTD. - SUCURSAL ARGENTINA,promedio_diario,0.122677419354839,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,INGENIERIA ALPA S.A.,promedio_diario,3.55741935483871,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,INGENIERIA SIMA S.A.,promedio_diario,0.0,Producción de gas promedio diaria por empresa
+2026-05,2026-05-01,2026,5,gas,empresa,INTEROIL ARGENTINA S A,promedio_diario,115.179870967742,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,JUJUY HIDROCARBUROS SAU,promedio_diario,8.18612903225806,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,MEDANITO S.A.,promedio_diario,2.18522580645161,Producción de gas promedio diaria por empresa
+2026-05,2026-05-01,2026,5,gas,empresa,OILSTONE ENERGIA S.A.,promedio_diario,566.830322580645,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,PAMPA ENERGIA S.A.,promedio_diario,14647.9048387097,Producción de gas promedio diaria por empresa
+2026-05,2026-05-01,2026,5,gas,empresa,PAMPETROL S.A.P.E.M,promedio_diario,3.93516129032258,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,PAN AMERICAN ENERGY SL,promedio_diario,16475.4309677419,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,PATAGONIA ENERGY S.A.,promedio_diario,2.60483870967742,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,PATAGONIA RESOURCES S.A. ,promedio_diario,232.817096774194,Producción de gas promedio diaria por empresa
@@ -12402,17 +12409,22 @@
 2026-05,2026-05-01,2026,5,gas,empresa,PETROLERA SAN MIGUEL S.A.,promedio_diario,0.0,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,PETROLERA SANTA MARIA SAU,promedio_diario,1546.18096774194,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,PETROLSUR ENERGIA S.A. ,promedio_diario,30.9916129032258,Producción de gas promedio diaria por empresa
-2026-05,2026-05-01,2026,5,gas,empresa,PETROQUIMICA COMODORO RIVADAVIA S.A.,promedio_diario,271.261612903226,Producción de gas promedio diaria por empresa
+2026-05,2026-05-01,2026,5,gas,empresa,PETROQUIMICA COMODORO RIVADAVIA S.A.,promedio_diario,444.653870967742,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,PHOENIX GLOBAL RESOURCES S.A.,promedio_diario,213.932483870968,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,PLUSPETROL CUENCA NEUQUINA S.R.L.,promedio_diario,1944.48129032258,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,PLUSPETROL S.A.,promedio_diario,13523.6614516129,Producción de gas promedio diaria por empresa
+2026-05,2026-05-01,2026,5,gas,empresa,Pilgrim Energy S.A.,promedio_diario,38.0806451612903,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,QUINTANA E&P ARGENTINA S.R.L.,promedio_diario,1895.69548387097,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,RECURSOS Y ENERGIA FORMOSA S.A.,promedio_diario,9.51612903225806,Producción de gas promedio diaria por empresa
+2026-05,2026-05-01,2026,5,gas,empresa,ROCH S.A.,promedio_diario,516.81,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,SAN JORGE PETROLEUM S.A.,promedio_diario,0.0,Producción de gas promedio diaria por empresa
+2026-05,2026-05-01,2026,5,gas,empresa,SELVA MARIA OIL S.A.,promedio_diario,0.0,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,SHELL ARGENTINA S.A.,promedio_diario,1443.87322580645,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,TANGO ENERGY ARGENTINA S.A.,promedio_diario,415.561161290323,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,TECPETROL S.A.,promedio_diario,22809.6125483871,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,TOTAL AUSTRAL S.A.,promedio_diario,35075.9727096774,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,VACA MUERTA INVERSIONES SAU,promedio_diario,290.033548387097,Producción de gas promedio diaria por empresa
+2026-05,2026-05-01,2026,5,gas,empresa,VELITEC S.A.,promedio_diario,632.657045258064,Producción de gas promedio diaria por empresa
+2026-05,2026-05-01,2026,5,gas,empresa,VENOIL S.A.,promedio_diario,184.198387096774,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,VISTA ENERGY ARGENTINA SAU,promedio_diario,1401.18290322581,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,YPF S.A.,promedio_diario,32327.2709677419,Producción de gas promedio diaria por empresa

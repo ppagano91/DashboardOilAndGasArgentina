@@ -1,7 +1,7 @@
 ﻿producto,agrupador_tipo,periodo_min,latest_valid_period,cantidad_agrupadores
 gas,cuenca,2009-01,2026-05,17
-gas,empresa,2009-01,2026-05,127
+gas,empresa,2009-01,2026-05,128
 gas,provincia,2009-01,2026-03,15
 petroleo,cuenca,2009-01,2025-11,17
-petroleo,empresa,2009-01,2026-05,127
+petroleo,empresa,2009-01,2026-06,128
 petroleo,provincia,2009-01,2025-12,15
