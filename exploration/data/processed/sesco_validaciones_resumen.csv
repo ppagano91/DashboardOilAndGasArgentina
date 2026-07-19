@@ -3,5 +3,5 @@ petroleo_provincia,petroleo,provincia,2505,2498,2009-01,2026-01,2025-12,2026-01,
 gas_provincia,gas,provincia,2493,2488,2009-01,2026-04,2026-03,2026-04,15,0,0,excluido periodo 2026-04
 petroleo_cuenca,petroleo,cuenca,2013,2013,2009-01,2025-11,2025-11,,17,0,0,
 gas_cuenca,gas,cuenca,2075,2075,2009-01,2026-06,2026-06,,17,0,0,
-petroleo_empresa,petroleo,empresa,12632,12632,2009-01,2026-06,2026-06,,128,0,1,
-gas_empresa,gas,empresa,12471,12471,2009-01,2026-06,2026-06,,128,0,0,
+petroleo_empresa,petroleo,empresa,12633,12633,2009-01,2026-06,2026-06,,128,0,1,
+gas_empresa,gas,empresa,12472,12472,2009-01,2026-06,2026-06,,128,0,0,
