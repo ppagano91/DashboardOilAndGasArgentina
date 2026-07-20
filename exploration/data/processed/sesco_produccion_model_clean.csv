@@ -9067,11 +9067,11 @@
 2026-05,2026-05-01,2026,5,gas,cuenca,NOROESTE,promedio_diario,2672.5824516129,Producción de gas promedio diaria por cuenca
 2026-05,2026-05-01,2026,5,gas,cuenca,ÑIRIHUAU,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
 2026-06,2026-06-01,2026,6,gas,cuenca,ARGENTINA NORTE,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
-2026-06,2026-06-01,2026,6,gas,cuenca,AUSTRAL,promedio_diario,24859.0828333333,Producción de gas promedio diaria por cuenca
+2026-06,2026-06-01,2026,6,gas,cuenca,AUSTRAL,promedio_diario,25016.1515,Producción de gas promedio diaria por cuenca
 2026-06,2026-06-01,2026,6,gas,cuenca,CAÑADON ASFALTO,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
-2026-06,2026-06-01,2026,6,gas,cuenca,CUYANA,promedio_diario,69.3698333333333,Producción de gas promedio diaria por cuenca
+2026-06,2026-06-01,2026,6,gas,cuenca,CUYANA,promedio_diario,78.8568333333333,Producción de gas promedio diaria por cuenca
 2026-06,2026-06-01,2026,6,gas,cuenca,GOLFO SAN JORGE,promedio_diario,2929.83846666667,Producción de gas promedio diaria por cuenca
-2026-06,2026-06-01,2026,6,gas,cuenca,NEUQUINA,promedio_diario,94054.1564666667,Producción de gas promedio diaria por cuenca
+2026-06,2026-06-01,2026,6,gas,cuenca,NEUQUINA,promedio_diario,110249.361133333,Producción de gas promedio diaria por cuenca
 2026-06,2026-06-01,2026,6,gas,cuenca,NOROESTE,promedio_diario,1625.4224,Producción de gas promedio diaria por cuenca
 2009-01,2009-01-01,2009,1,petroleo,empresa,ALIANZA PETROLERA ARGENTINA S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
 2009-01,2009-01-01,2009,1,petroleo,empresa,APACHE ENERGIA ARGENTINA S.R.L.,promedio_diario,1148.38,Producción de petróleo promedio diaria por empresa
@@ -21663,6 +21663,7 @@
 2026-05,2026-05-01,2026,5,petroleo,empresa,VISTA ENERGY ARGENTINA SAU,promedio_diario,13064.0990322581,Producción de petróleo promedio diaria por empresa
 2026-05,2026-05-01,2026,5,petroleo,empresa,YPF S.A.,promedio_diario,55392.7448387097,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,ALIANZA PETROLERA ARGENTINA S.A.,promedio_diario,1.06666666666667,Producción de petróleo promedio diaria por empresa
+2026-06,2026-06-01,2026,6,petroleo,empresa,BENTIA ENERGY S.A.,promedio_diario,503.336333333333,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,CAPETROL ARGENTINA S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,CAPETROL S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,CAPEX S.A.,promedio_diario,1560.967,Producción de petróleo promedio diaria por empresa
@@ -34136,6 +34137,7 @@
 2026-05,2026-05-01,2026,5,gas,empresa,VISTA ENERGY ARGENTINA SAU,promedio_diario,1401.18290322581,Producción de gas promedio diaria por empresa
 2026-05,2026-05-01,2026,5,gas,empresa,YPF S.A.,promedio_diario,32327.2709677419,Producción de gas promedio diaria por empresa
 2026-06,2026-06-01,2026,6,gas,empresa,ALIANZA PETROLERA ARGENTINA S.A.,promedio_diario,49.8864333333333,Producción de gas promedio diaria por empresa
+2026-06,2026-06-01,2026,6,gas,empresa,BENTIA ENERGY S.A.,promedio_diario,489.691,Producción de gas promedio diaria por empresa
 2026-06,2026-06-01,2026,6,gas,empresa,CAPETROL ARGENTINA S.A.,promedio_diario,0.0,Producción de gas promedio diaria por empresa
 2026-06,2026-06-01,2026,6,gas,empresa,CAPETROL S.A.,promedio_diario,0.0,Producción de gas promedio diaria por empresa
 2026-06,2026-06-01,2026,6,gas,empresa,CAPEX S.A.,promedio_diario,1272.53866666667,Producción de gas promedio diaria por empresa
