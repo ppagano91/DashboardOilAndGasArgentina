@@ -28,10 +28,10 @@ Las carpetas `backend/` y `frontend/` del repositorio existen como base para fas
 
 | Aspecto | Detalle |
 |---------|---------|
-| **Dataset CKAN** | `energia-produccion-petroleo-gas-sesco` |
-| **Título** | Energía — Producción de petróleo y gas — SESCO |
-| **Portal** | [datos.gob.ar](https://datos.gob.ar/dataset/energia-produccion-petroleo-gas-sesco) |
-| **API** | `https://datos.gob.ar/api/3/action/package_show?id=energia-produccion-petroleo-gas-sesco` |
+| **Dataset CKAN** | `produccion-de-petroleo-y-gas-tablas-dinamicas` |
+| **Título** | Producción de Petróleo y Gas (SESCO) |
+| **Portal** | [datos.gob.ar](https://datos.gob.ar/dataset/produccion-de-petroleo-y-gas-tablas-dinamicas) |
+| **API** | `https://datos.gob.ar/api/3/action/package_show?id=produccion-de-petroleo-y-gas-tablas-dinamicas` |
 
 **Por qué se usa CKAN y no URLs fijas:** los recursos pueden cambiar de URL, nombre o fecha de modificación. El pipeline consulta metadata en vivo (`package_show`), resuelve el recurso por nombre o keywords y descarga desde la URL actual. El inventario local `ckan_resources.csv` complementa la auditoría humana.
 
@@ -279,7 +279,7 @@ Ubicación: `exploration/scripts/`. Ejecutar desde la **raíz del repositorio** 
 | **Salidas** | Unificado, validaciones por recurso y auxiliares dashboard (ver §8). |
 | **Funciones principales** | `main()` → opcional `ensure_raw_snapshot()` + `process_all_resources()` + `export_unified()` + `export_dashboard_auxiliaries()`. |
 | **CLI** | `python exploration/scripts/run_mvp_processing.py` |
-| **CLI con snapshot** | `--update-raw` (descarga solo si CKAN cambió) · `--force-download` (fuerza descarga del día) |
+| **CLI con snapshot** | `--update-raw` (descarga solo si CKAN cambió) · `--allow-stale-raw` (reutiliza `raw/latest/` si CKAN no responde) · `--force-download` (fuerza descarga del día) |
 | **Auxiliares dashboard** | `sesco_latest_periods_by_view.csv`, `sesco_dashboard_config.csv`, `sesco_totales_por_vista_resumen.csv` (misma lógica que notebook 03). |
 
 ---
@@ -316,9 +316,11 @@ El módulo `ensure_raw_snapshot()` implementa descarga versionada desde CKAN:
 | Comportamiento | Descripción |
 |----------------|-------------|
 | **Sin snapshots previos** | Crea `snapshots/YYYY-MM-DD/`, descarga los 6 CSV, escribe `manifest.json`, sincroniza `latest/`. |
-| **CKAN sin cambios** | Reutiliza el último snapshot válido; no descarga duplicados. |
+| **CKAN sin cambios** | Reutiliza el último snapshot válido o `raw/latest/`; no descarga duplicados. |
 | **CKAN con cambios** | Crea snapshot del día (sufijo `_HHMMSS` si ya existe carpeta del día) y descarga los 6 recursos. |
 | **`--force-download`** | Fuerza descarga aunque no haya cambios detectados. |
+| **CKAN caído + `--allow-stale-raw`** | No descarga ni pisa `latest/`; reutiliza `raw/latest/` si es válido. |
+| **CKAN caído (estricto)** | Falla. Sin `--allow-stale-raw` no hay fallback. |
 
 Ejemplo de `manifest.json`:
 
@@ -434,7 +436,7 @@ No hay política automática de limpieza. Borrar carpetas antiguas en `snapshots
 | `cuencas_sedimentarias_no_productivas.csv` | Fuente geo | Polígonos WKT cuencas no productivas | Notebook 04 |
 | `produccion_petroleo_promedio_diaria_por_provincia_v1.csv` | Descarga anterior | **Obsoleto** — no se lee; renombrar a `petroleo_provincia.csv` o regenerar snapshot |
 
-**Forzar actualización raw SESCO:** `python exploration/scripts/run_mvp_processing.py --update-raw` o `--force-download`. No se re-descargan archivos si CKAN no cambió (salvo `--force-download`).
+**Forzar actualización raw SESCO:** `python exploration/scripts/run_mvp_processing.py --update-raw` o `--force-download`. No se re-descargan archivos si CKAN no cambió (salvo `--force-download`). En automatización usar `--allow-stale-raw` para no fallar si datos.gob.ar responde 502.
 
 **Limpieza de snapshots antiguos:** manual; no hay retención automática.
 
@@ -780,13 +782,13 @@ Workflow: [`.github/workflows/update_sesco_data.yml`](../.github/workflows/updat
 |---------|---------|
 | **Disparadores** | `schedule` diario + `workflow_dispatch` (manual) |
 | **Horario** | `cron: 0 9 * * *` UTC = **06:00** `America/Argentina/Buenos_Aires` (UTC-3) |
-| **Comando** | `python exploration/scripts/run_mvp_processing.py --update-raw` |
+| **Comando** | `python exploration/scripts/run_mvp_processing.py --update-raw --allow-stale-raw` |
 | **Dependencias** | `pip install -r exploration/requirements.txt` |
 | **Commit** | Solo si hay cambios en `exploration/data/processed/` o `exploration/data/raw/latest/` |
 | **Autor del commit** | `github-actions[bot]` |
 | **Permisos** | `contents: write` |
 
-**Qué hace el pipeline:** consulta CKAN; si hay cambios (o no hay snapshot previo), descarga los 6 CSV MVP a `raw/snapshots/` y sincroniza `raw/latest/`; procesa y exporta `processed/`; el workflow commitea y pushea únicamente cuando `git diff` detecta cambios.
+**Qué hace el pipeline:** consulta CKAN (hasta 5 intentos con backoff); si hay cambios (o no hay snapshot previo), descarga los 6 CSV MVP a `raw/snapshots/` y sincroniza `raw/latest/`; si CKAN no responde pero `raw/latest/` es válido, reutiliza esos datos y continúa; procesa y exporta `processed/`; el workflow commitea y pushea únicamente cuando `git diff` detecta cambios.
 
 **Limitaciones:**
 
@@ -800,9 +802,10 @@ Workflow: [`.github/workflows/update_sesco_data.yml`](../.github/workflows/updat
 ```bash
 pip install -r exploration/requirements.txt
 python exploration/scripts/run_mvp_processing.py --update-raw
+python exploration/scripts/run_mvp_processing.py --update-raw --allow-stale-raw
 ```
 
-Variantes: sin tocar CKAN (`python exploration/scripts/run_mvp_processing.py` usando `raw/latest/` existente); forzar descarga (`--force-download`).
+Variantes: sin tocar CKAN (`python exploration/scripts/run_mvp_processing.py` usando `raw/latest/` existente); forzar descarga (`--force-download`); modo estricto sin fallback (`--update-raw` solo).
 
 ### Política de versionado (resumen)
 

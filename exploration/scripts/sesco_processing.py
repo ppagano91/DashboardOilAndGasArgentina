@@ -37,9 +37,16 @@ from typing import Any
 import pandas as pd
 
 # Identificador oficial del dataset en datos.gob.ar (único punto de verdad CKAN).
-PACKAGE_ID = "energia-produccion-petroleo-gas-sesco"
+# El slug histórico energia-produccion-petroleo-gas-sesco ya no existe (HTTP 404).
+PACKAGE_ID = "produccion-de-petroleo-y-gas-tablas-dinamicas"
 CKAN_URL = f"https://datos.gob.ar/api/3/action/package_show?id={PACKAGE_ID}"
 USER_AGENT = "OilGas-Exploration/1.0"
+
+# HTTP temporales típicos de datos.gob.ar / CKAN saturado o en mantenimiento.
+CKAN_TRANSIENT_HTTP_CODES = frozenset({500, 502, 503, 504})
+CKAN_DEFAULT_RETRIES = 5
+# Espera después de cada intento fallido, antes del siguiente (el 5.º falla sin espera).
+CKAN_DEFAULT_BACKOFF_SCHEDULE_S = (10.0, 30.0, 60.0, 120.0)
 
 # Rutas relativas al módulo: independientes del directorio de trabajo al ejecutar CLI.
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -240,6 +247,51 @@ class ProcessResult:
     notes: list[str] = field(default_factory=list)
 
 
+class CkanUnavailableError(RuntimeError):
+    """
+    CKAN no disponible temporalmente luego de agotar reintentos.
+
+    Se usa para 502/503/504 (y 500), timeouts y errores de red. No cubre
+    respuestas HTTP permanentes (p. ej. 404) ni ``success=false`` de la API.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        attempts: int,
+        last_error: Exception | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.attempts = attempts
+        self.last_error = last_error
+
+
+@dataclass
+class RawSnapshotStatus:
+    """Estado de la última llamada a ``ensure_raw_snapshot`` (logs / CLI)."""
+
+    snapshot_dir: Path
+    ckan_available: bool
+    used_stale_raw: bool
+    last_successful_snapshot: str | None
+    error: str | None = None
+    package: dict[str, Any] | None = None
+
+
+_LAST_RAW_SNAPSHOT_STATUS: RawSnapshotStatus | None = None
+
+
+def get_last_raw_snapshot_status() -> RawSnapshotStatus | None:
+    """Devuelve el estado de la última ejecución de ``ensure_raw_snapshot``."""
+    return _LAST_RAW_SNAPSHOT_STATUS
+
+
+def _set_raw_snapshot_status(status: RawSnapshotStatus) -> None:
+    global _LAST_RAW_SNAPSHOT_STATUS
+    _LAST_RAW_SNAPSHOT_STATUS = status
+
+
 def normalize_text(value: str) -> str:
     """
     Normaliza texto para comparaciones insensibles a acentos y mayúsculas.
@@ -259,7 +311,28 @@ def normalize_text(value: str) -> str:
     return text.lower().strip()
 
 
-def fetch_ckan_package(timeout: int = 60, retries: int = 3, backoff_s: float = 2.0) -> dict:
+def _ckan_wait_seconds(
+    attempt: int,
+    *,
+    backoff_s: float | None,
+    backoff_schedule: tuple[float, ...] | None,
+) -> float:
+    """Segundos de espera tras un intento fallido ``attempt`` (1-based)."""
+    if backoff_schedule:
+        index = min(attempt - 1, len(backoff_schedule) - 1)
+        return float(backoff_schedule[index])
+    if backoff_s is not None:
+        return float(backoff_s) * attempt
+    index = min(attempt - 1, len(CKAN_DEFAULT_BACKOFF_SCHEDULE_S) - 1)
+    return float(CKAN_DEFAULT_BACKOFF_SCHEDULE_S[index])
+
+
+def fetch_ckan_package(
+    timeout: int = 60,
+    retries: int = CKAN_DEFAULT_RETRIES,
+    backoff_s: float | None = None,
+    backoff_schedule: tuple[float, ...] | None = None,
+) -> dict:
     """
     Consulta metadata del dataset SESCO en la API CKAN de datos.gob.ar.
 
@@ -268,39 +341,75 @@ def fetch_ckan_package(timeout: int = 60, retries: int = 3, backoff_s: float = 2
     timeout : int
         Segundos de espera por intento HTTP.
     retries : int
-        Cantidad máxima de intentos ante errores transitorios.
-    backoff_s : float
-        Base de espera entre reintentos (multiplicada por el número de intento).
+        Cantidad máxima de intentos ante errores transitorios (default 5).
+    backoff_s : float, optional
+        Si se indica, espera ``backoff_s * intento`` entre reintentos
+        (compatibilidad con el backoff lineal anterior).
+    backoff_schedule : tuple[float, ...], optional
+        Esperas explícitas tras cada intento fallido. Por defecto
+        ``(10, 30, 60, 120)`` segundos.
 
     Returns
     -------
     dict
         Nodo ``result`` del JSON CKAN (incluye ``resources``).
 
+    Raises
+    ------
+    CkanUnavailableError
+        Si CKAN no responde luego de agotar reintentos temporales
+        (HTTP 500/502/503/504, timeout o error de red).
+    RuntimeError
+        Si CKAN responde un error de API (``success=false``) o un HTTP
+        no transitorio.
+
     Notes
     -----
-    CKAN puede responder HTTP 500 de forma temporal; se reintenta antes de fallar.
+    datos.gob.ar puede devolver 502 Bad Gateway de forma intermitente.
+    El backoff por defecto es incremental: 10s, 30s, 60s, 120s.
     """
     request = urllib.request.Request(CKAN_URL, headers={"User-Agent": USER_AGENT})
+    schedule = backoff_schedule
+    if schedule is None and backoff_s is None:
+        schedule = CKAN_DEFAULT_BACKOFF_SCHEDULE_S
 
     last_exc: Exception | None = None
     for attempt in range(1, retries + 1):
+        print(f"Consultando CKAN (intento {attempt}/{retries})...")
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 payload = json.loads(response.read().decode("utf-8"))
             if not payload.get("success"):
                 raise RuntimeError(f"CKAN respondió con error: {payload.get('error')}")
+            print("CKAN respondió correctamente.")
             return payload["result"]
         except urllib.error.HTTPError as exc:
-            # A veces CKAN responde 500 temporalmente.
             last_exc = exc
-        except urllib.error.URLError as exc:
+            if exc.code not in CKAN_TRANSIENT_HTTP_CODES:
+                raise RuntimeError(
+                    f"CKAN respondió HTTP {exc.code}: {exc.reason}"
+                ) from exc
+            print(
+                f"CKAN no disponible temporalmente "
+                f"(HTTP {exc.code} {exc.reason})."
+            )
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
             last_exc = exc
+            reason = getattr(exc, "reason", exc)
+            print(f"Error de red al consultar CKAN: {reason}")
 
         if attempt < retries:
-            time.sleep(backoff_s * attempt)
+            wait_s = _ckan_wait_seconds(
+                attempt, backoff_s=backoff_s, backoff_schedule=schedule
+            )
+            print(f"Reintentando en {wait_s:.0f}s...")
+            time.sleep(wait_s)
 
-    raise RuntimeError(f"No se pudo consultar CKAN luego de {retries} intentos: {last_exc}")
+    raise CkanUnavailableError(
+        f"CKAN no disponible temporalmente luego de {retries} intentos: {last_exc}",
+        attempts=retries,
+        last_error=last_exc,
+    )
 
 
 def list_resources(package: dict | None = None) -> pd.DataFrame:
@@ -475,6 +584,131 @@ def save_manifest(snapshot_dir: Path, manifest: dict[str, Any]) -> None:
 def _is_valid_manifest(manifest: dict[str, Any]) -> bool:
     resources = manifest.get("resources")
     return isinstance(resources, dict) and len(resources) > 0
+
+
+def is_valid_latest_raw(
+    latest_dir: Path | None = None,
+    resources_config: dict[str, dict[str, Any]] | None = None,
+) -> bool:
+    """
+    Indica si ``raw/latest/`` puede usarse como fallback cuando CKAN no responde.
+
+    Requiere directorio existente, ``manifest.json`` válido y los 6 CSV
+    canónicos no vacíos.
+    """
+    latest_dir = latest_dir or RAW_LATEST_DIR
+    resources_config = resources_config or SESCO_RESOURCES_MVP
+    if not latest_dir.is_dir():
+        return False
+
+    manifest = load_manifest(latest_dir)
+    if not _is_valid_manifest(manifest):
+        return False
+
+    manifest_resources = manifest.get("resources", {})
+    for resource_key in resources_config:
+        if resource_key not in manifest_resources:
+            return False
+        csv_path = latest_dir / get_resource_local_filename(resource_key)
+        if not csv_path.is_file() or csv_path.stat().st_size <= 0:
+            return False
+    return True
+
+
+def build_package_from_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    """
+    Reconstruye un paquete CKAN mínimo a partir de ``manifest.json``.
+
+    Permite que ``list_resources`` / ``process_resource`` resuelvan nombre y
+    URL sin volver a consultar datos.gob.ar.
+    """
+    resources: list[dict[str, Any]] = []
+    raw_resources = manifest.get("resources", {})
+    if isinstance(raw_resources, dict):
+        entries = raw_resources.values()
+    elif isinstance(raw_resources, list):
+        entries = raw_resources
+    else:
+        entries = []
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        resources.append(
+            {
+                "id": entry.get("resource_id") or entry.get("id"),
+                "name": entry.get("name"),
+                "url": entry.get("url"),
+                "format": entry.get("format") or "CSV",
+                "created": entry.get("created"),
+                "last_modified": entry.get("last_modified"),
+                "size": entry.get("size"),
+            }
+        )
+    return {
+        "id": manifest.get("package_id") or PACKAGE_ID,
+        "resources": resources,
+    }
+
+
+def _format_ckan_error(exc: Exception) -> str:
+    if isinstance(exc, CkanUnavailableError) and exc.last_error is not None:
+        last = exc.last_error
+        if isinstance(last, urllib.error.HTTPError):
+            return f"HTTP Error {last.code} {last.reason}"
+        return str(last)
+    return str(exc)
+
+
+def _resolve_previous_snapshot(
+    resources_config: dict[str, dict[str, Any]],
+) -> Path | None:
+    """Último snapshot versionado o, si no hay, ``raw/latest/`` válido."""
+    latest_snapshot = get_latest_snapshot_dir()
+    if latest_snapshot is not None:
+        return latest_snapshot
+    if is_valid_latest_raw(resources_config=resources_config):
+        return RAW_LATEST_DIR
+    return None
+
+
+def _fallback_to_stale_raw(
+    exc: Exception,
+    resources_config: dict[str, dict[str, Any]],
+) -> Path:
+    """Reutiliza ``raw/latest/`` si es válido; si no, falla con mensaje claro."""
+    if not is_valid_latest_raw(resources_config=resources_config):
+        raise RuntimeError(
+            "No se pudo consultar CKAN y no existe raw/latest válido para continuar."
+        ) from exc
+
+    manifest = load_manifest(RAW_LATEST_DIR)
+    associated_snapshot = get_latest_snapshot_dir()
+    snapshot_label = (
+        manifest.get("snapshot_date")
+        or (associated_snapshot.name if associated_snapshot is not None else None)
+        or RAW_LATEST_DIR.name
+    )
+    error_label = _format_ckan_error(exc)
+    print("Advertencia: CKAN no disponible. Se reutiliza raw/latest existente.")
+    print(
+        "Estado de fallback CKAN:\n"
+        f"  ckan_available = false\n"
+        f"  used_stale_raw = true\n"
+        f"  last_successful_snapshot = {snapshot_label}\n"
+        f"  error = {error_label}"
+    )
+    _set_raw_snapshot_status(
+        RawSnapshotStatus(
+            snapshot_dir=RAW_LATEST_DIR,
+            ckan_available=False,
+            used_stale_raw=True,
+            last_successful_snapshot=str(snapshot_label),
+            error=error_label,
+            package=build_package_from_manifest(manifest),
+        )
+    )
+    return RAW_LATEST_DIR
 
 
 def get_latest_snapshot_dir(snapshots_dir: Path | None = None) -> Path | None:
@@ -719,6 +953,7 @@ def ensure_raw_snapshot(
     force_download: bool = False,
     update_latest: bool = True,
     resources_config: dict[str, dict[str, Any]] | None = None,
+    allow_stale_raw: bool = False,
 ) -> Path:
     """
     Asegura un snapshot raw versionado de los recursos MVP desde CKAN.
@@ -731,6 +966,10 @@ def ensure_raw_snapshot(
         Si es ``True``, sincroniza ``raw/latest/`` con el snapshot seleccionado.
     resources_config : dict, optional
         Mapa ``resource_key`` → config MVP; por defecto ``SESCO_RESOURCES_MVP``.
+    allow_stale_raw : bool
+        Si es ``True`` y CKAN no está disponible, reutiliza ``raw/latest/``
+        válido en lugar de fallar. Si es ``False`` (default), el error de
+        CKAN se propaga (modo estricto).
 
     Returns
     -------
@@ -744,12 +983,20 @@ def ensure_raw_snapshot(
     - CKAN sin cambios: reutiliza el último snapshot válido (sin descargas duplicadas).
     - CKAN con cambios: crea snapshot del día y descarga los 6 recursos (snapshot completo).
     - ``force_download=True`` con carpeta del día existente: usa sufijo ``_HHMMSS``.
+    - Si CKAN falla y ``allow_stale_raw=True``, no descarga, no crea snapshot
+      vacío y no pisa ``latest/``.
     """
     resources_config = resources_config or SESCO_RESOURCES_MVP
-    package = fetch_ckan_package()
+    try:
+        package = fetch_ckan_package()
+    except (CkanUnavailableError, RuntimeError) as exc:
+        if allow_stale_raw:
+            return _fallback_to_stale_raw(exc, resources_config)
+        raise
+
     resources_df = list_resources(package)
 
-    latest_snapshot = get_latest_snapshot_dir()
+    latest_snapshot = _resolve_previous_snapshot(resources_config)
     previous_manifest = load_manifest(latest_snapshot) if latest_snapshot else {}
     today_dir = get_today_snapshot_dir()
 
@@ -770,8 +1017,19 @@ def ensure_raw_snapshot(
         if target is None and today_dir.exists() and _is_valid_manifest(load_manifest(today_dir)):
             target = today_dir
         if target is not None:
-            if update_latest:
+            # No copiar latest sobre sí mismo: sync borra el destino antes de copiar.
+            if update_latest and target.resolve() != RAW_LATEST_DIR.resolve():
                 sync_latest_from_snapshot(target)
+            _set_raw_snapshot_status(
+                RawSnapshotStatus(
+                    snapshot_dir=target,
+                    ckan_available=True,
+                    used_stale_raw=False,
+                    last_successful_snapshot=target.name,
+                    error=None,
+                    package=package,
+                )
+            )
             return target
 
     if force_download:
@@ -809,6 +1067,16 @@ def ensure_raw_snapshot(
     if update_latest:
         sync_latest_from_snapshot(snapshot_dir)
 
+    _set_raw_snapshot_status(
+        RawSnapshotStatus(
+            snapshot_dir=snapshot_dir,
+            ckan_available=True,
+            used_stale_raw=False,
+            last_successful_snapshot=snapshot_dir.name,
+            error=None,
+            package=package,
+        )
+    )
     return snapshot_dir
 
 
@@ -1825,6 +2093,7 @@ def process_all_resources(
     package: dict | None = None,
     raw_dir: Path | None = None,
     verbose: bool = True,
+    download_if_missing: bool = True,
 ) -> tuple[list[ProcessResult], pd.DataFrame, pd.DataFrame]:
     """
     Procesa todos los recursos MVP y arma el dataset unificado.
@@ -1839,6 +2108,9 @@ def process_all_resources(
         Directorio de CSV raw; por defecto ``resolve_raw_dir()`` (``latest/`` o ``raw/``).
     verbose : bool
         Logs por recurso y errores.
+    download_if_missing : bool
+        Si es ``True``, ``process_resource`` puede descargar un CSV faltante.
+        Se fuerza a ``False`` cuando CKAN no está disponible.
 
     Returns
     -------
@@ -1852,7 +2124,20 @@ def process_all_resources(
     con datos válidos.
     """
     if package is None:
-        package = fetch_ckan_package()
+        try:
+            package = fetch_ckan_package()
+        except (CkanUnavailableError, RuntimeError) as exc:
+            if is_valid_latest_raw():
+                print(
+                    "Advertencia: CKAN no disponible. "
+                    "Se reutiliza metadata de raw/latest/manifest.json."
+                )
+                package = build_package_from_manifest(load_manifest(RAW_LATEST_DIR))
+                download_if_missing = False
+            else:
+                raise RuntimeError(
+                    "No se pudo consultar CKAN y no existe raw/latest válido para continuar."
+                ) from exc
     resources_df = list_resources(package)
     raw_dir = raw_dir or resolve_raw_dir()
 
@@ -1865,6 +2150,7 @@ def process_all_resources(
                 resources_df,
                 raw_dir=raw_dir,
                 verbose=verbose,
+                download_if_missing=download_if_missing,
             )
             results.append(result)
         except Exception as exc:

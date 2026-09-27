@@ -251,13 +251,15 @@ Toda la lógica de transformación reside en el módulo; el script define `main(
 ```bash
 python exploration/scripts/run_mvp_processing.py                  # procesa desde raw/latest/ o raw/ canónico
 python exploration/scripts/run_mvp_processing.py --update-raw       # snapshot CKAN si hay cambios, luego procesa
+python exploration/scripts/run_mvp_processing.py --update-raw --allow-stale-raw
 python exploration/scripts/run_mvp_processing.py --force-download # fuerza descarga del día, luego procesa
 ```
 
 | Flag | Efecto |
 |------|--------|
 | *(ninguno)* | Usa `resolve_raw_dir()`; descarga puntual solo si falta un CSV en procesamiento individual. |
-| `--update-raw` | Llama `ensure_raw_snapshot(force_download=False)` antes de procesar. |
+| `--update-raw` | Llama `ensure_raw_snapshot(force_download=False)` antes de procesar. Modo estricto: falla si CKAN no responde. |
+| `--allow-stale-raw` | Con `--update-raw` o `--force-download`, reutiliza `raw/latest/` válido si CKAN está caído. |
 | `--force-download` | Llama `ensure_raw_snapshot(force_download=True)` antes de procesar. |
 
 ---
@@ -389,11 +391,11 @@ A partir de junio 2026, el código interno de `sesco_processing.py` usa **inglé
 #### `fetch_ckan_package`
 
 - **Propósito:** Obtener el JSON completo del dataset SESCO desde CKAN.
-- **Entradas:** `timeout` (60 s), `retries` (3), `backoff_s` (2.0) — reintentos ante HTTP 500 o errores de red.
+- **Entradas:** `timeout` (60 s), `retries` (5), `backoff_s` opcional (backoff lineal legado), `backoff_schedule` opcional. Por defecto espera 10s, 30s, 60s y 120s entre intentos.
 - **Salida:** `dict` con el nodo `result` de CKAN.
-- **Lógica resumida:** Request GET con `User-Agent` → parse JSON → validar `success` → reintentar con backoff.
-- **Uso en el flujo:** Primera etapa de `list_resources` y `process_all_resources`.
-- **Consideraciones:** Errores persistentes lanzan `RuntimeError`.
+- **Lógica resumida:** Request GET con `User-Agent` → parse JSON → validar `success` → reintentar ante HTTP 500/502/503/504, timeout o error de red.
+- **Uso en el flujo:** Primera etapa de `list_resources`, `ensure_raw_snapshot` y `process_all_resources`.
+- **Consideraciones:** Tras agotar reintentos temporales lanza `CkanUnavailableError`. HTTP no transitorio (p. ej. 404) lanza `RuntimeError` de inmediato.
 
 #### `list_resources`
 
@@ -431,7 +433,9 @@ A partir de junio 2026, el código interno de `sesco_processing.py` usa **inglé
 | `load_manifest` / `save_manifest` | Leer/escribir metadata del snapshot. |
 | `build_resource_metadata` | Extrae campos CKAN para el manifest (sin inventar valores). |
 | `has_resource_changed` | Compara metadata actual vs anterior (`id`, `url`, `last_modified`, etc.). |
-| `ensure_raw_snapshot` | Orquesta consulta CKAN, comparación, descarga y sync de `latest/`. |
+| `ensure_raw_snapshot` | Orquesta consulta CKAN, comparación, descarga y sync de `latest/`. Con `allow_stale_raw=True` reutiliza `latest/` si CKAN no responde. |
+| `is_valid_latest_raw` | Comprueba `manifest.json` + 6 CSV canónicos en `raw/latest/`. | `ensure_raw_snapshot` fallback |
+| `CkanUnavailableError` | Error distinguible cuando CKAN no responde luego de N intentos. | `fetch_ckan_package` |
 | `sync_latest_from_snapshot` | Copia CSV + manifest a `raw/latest/` (no symlink). |
 | `resolve_raw_dir` | Directorio preferido para lote (`latest/` o `raw/`) | `process_all_resources` |
 | `resolve_raw_resource_path` | Path concreto por `resource_key` | `process_resource`, notebooks |
@@ -855,6 +859,9 @@ python exploration/scripts/run_mvp_processing.py
 
 # Actualizar raw desde CKAN (solo si cambió) y procesar
 python exploration/scripts/run_mvp_processing.py --update-raw
+
+# Igual, pero reutiliza raw/latest/ si CKAN no responde
+python exploration/scripts/run_mvp_processing.py --update-raw --allow-stale-raw
 
 # Forzar descarga raw y procesar
 python exploration/scripts/run_mvp_processing.py --force-download

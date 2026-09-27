@@ -22,7 +22,7 @@ Se utiliza el dataset oficial **Producción de Petróleo y Gas — SESCO**.
 
 La metadata y los recursos descargables se consultan vía la API CKAN de Datos Argentina:
 
-https://datos.gob.ar/api/3/action/package_show?id=energia-produccion-petroleo-gas-sesco
+https://datos.gob.ar/api/3/action/package_show?id=produccion-de-petroleo-y-gas-tablas-dinamicas
 
 **CKAN** se usa para descubrir recursos del paquete, leer metadatos (nombre, formato, fechas) y obtener las **URLs actuales** de descarga de cada CSV, sin depender de enlaces fijos que puedan cambiar.
 
@@ -207,11 +207,14 @@ El dashboard **no descarga desde CKAN** en tiempo de ejecución: lee archivos en
 
 ```bash
 python exploration/scripts/run_mvp_processing.py --update-raw
+python exploration/scripts/run_mvp_processing.py --update-raw --allow-stale-raw
 ```
 
 Consulta CKAN, crea snapshot raw solo si hay cambios, procesa los 6 recursos MVP y regenera `processed/` (incluye auxiliares del dashboard).
 
-**Actualización automática diaria:** GitHub Actions (workflow `.github/workflows/update_sesco_data.yml`) ejecuta el mismo comando y hace commit/push solo si detecta cambios en `exploration/data/processed/` o `exploration/data/raw/latest/`. Horario programado: **06:00** hora de Argentina (`America/Argentina/Buenos_Aires`, UTC-3). También disponible manualmente desde la pestaña **Actions** → **Update SESCO data** → **Run workflow**.
+`--update-raw` es **estricto**: si CKAN no responde (p. ej. HTTP 502), el comando falla. `--allow-stale-raw` reutiliza `exploration/data/raw/latest/` cuando CKAN está caído, siempre que ese directorio tenga `manifest.json` y los 6 CSV canónicos.
+
+**Actualización automática diaria:** GitHub Actions (workflow `.github/workflows/update_sesco_data.yml`) ejecuta `python exploration/scripts/run_mvp_processing.py --update-raw --allow-stale-raw` y hace commit/push solo si detecta cambios en `exploration/data/processed/` o `exploration/data/raw/latest/`. Horario programado: **06:00** hora de Argentina (`America/Argentina/Buenos_Aires`, UTC-3). También disponible manualmente desde la pestaña **Actions** → **Update SESCO data** → **Run workflow**. Si datos.gob.ar responde 502/503/504, el workflow reutiliza `raw/latest/` y no falla.
 
 **Limitación:** los schedules de GitHub Actions usan UTC y pueden retrasarse varios minutos (o más en repos inactivos); no garantizan ejecución exacta al minuto.
 

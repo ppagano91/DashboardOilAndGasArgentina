@@ -18,7 +18,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-PACKAGE_ID = "energia-produccion-petroleo-gas-sesco"
+PACKAGE_ID = "produccion-de-petroleo-y-gas-tablas-dinamicas"
 CKAN_URL = f"https://datos.gob.ar/api/3/action/package_show?id={PACKAGE_ID}"
 USER_AGENT = "OilGas-Exploration/1.0"
 

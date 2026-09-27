@@ -27,7 +27,7 @@ jobs:
         run: pip install -r exploration/requirements.txt
 
       - name: Update raw from CKAN and regenerate processed data
-        run: python exploration/scripts/run_mvp_processing.py --update-raw
+        run: python exploration/scripts/run_mvp_processing.py --update-raw --allow-stale-raw
 
       - name: Detect data changes
         id: changes
