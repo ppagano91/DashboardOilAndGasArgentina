@@ -12584,13 +12584,15 @@
 2026-05,2026-05-01,2026,5,petroleo,empresa,TECPETROL S.A.,promedio_diario,3218.64067741936,Producción de petróleo promedio diaria por empresa
 2026-05,2026-05-01,2026,5,petroleo,empresa,TOTAL AUSTRAL S.A.,promedio_diario,1244.38725806452,Producción de petróleo promedio diaria por empresa
 2026-05,2026-05-01,2026,5,petroleo,empresa,VACA MUERTA INVERSIONES SAU,promedio_diario,641.722903225806,Producción de petróleo promedio diaria por empresa
-2026-05,2026-05-01,2026,5,petroleo,empresa,VELITEC S.A.,promedio_diario,176.33535483871,Producción de petróleo promedio diaria por empresa
+2026-05,2026-05-01,2026,5,petroleo,empresa,VELITEC S.A.,promedio_diario,177.805774193548,Producción de petróleo promedio diaria por empresa
 2026-05,2026-05-01,2026,5,petroleo,empresa,VENOIL S.A.,promedio_diario,243.246451612903,Producción de petróleo promedio diaria por empresa
 2026-05,2026-05-01,2026,5,petroleo,empresa,VISTA ENERGY ARGENTINA SAU,promedio_diario,13064.0990322581,Producción de petróleo promedio diaria por empresa
 2026-05,2026-05-01,2026,5,petroleo,empresa,YPF S.A.,promedio_diario,55392.7448387097,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,ALIANZA PETROLERA ARGENTINA S.A.,promedio_diario,1.06666666666667,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,ARGENTA ENERGIA S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-06,2026-06-01,2026,6,petroleo,empresa,AZRUGE S.A.,promedio_diario,25.6163333333333,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,BENTIA ENERGY S.A.,promedio_diario,503.336333333333,Producción de petróleo promedio diaria por empresa
+2026-06,2026-06-01,2026,6,petroleo,empresa,BREST S.A. DE SERVICIOS PETROLEROS,promedio_diario,185.320666666667,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,CAPETROL ARGENTINA S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,CAPETROL S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,CAPEX S.A.,promedio_diario,1560.967,Producción de petróleo promedio diaria por empresa
@@ -12604,10 +12606,13 @@
 2026-06,2026-06-01,2026,6,petroleo,empresa,Clear Petroleum S.A.,promedio_diario,1317.34266666667,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,E.M.E.S.A,promedio_diario,27.0197333333333,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,EDHIPSA,promedio_diario,92.9756004,Producción de petróleo promedio diaria por empresa
+2026-06,2026-06-01,2026,6,petroleo,empresa,ENERGICON S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,FLXS OGE S.A ,promedio_diario,60.5616666666667,Producción de petróleo promedio diaria por empresa
+2026-06,2026-06-01,2026,6,petroleo,empresa,FOMICRUZ S.E.,promedio_diario,12.1866666666667,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,G Y G OIL SERVICE SRL,promedio_diario,5.432,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,GEOPARK ARGENTINA S.A.,promedio_diario,137.459333333333,Producción de petróleo promedio diaria por empresa
-2026-06,2026-06-01,2026,6,petroleo,empresa,GEOPETROL DRILLING S.A.,promedio_diario,2.99,Producción de petróleo promedio diaria por empresa
+2026-06,2026-06-01,2026,6,petroleo,empresa,GEOPETROL DRILLING S.A.,promedio_diario,42.1476666666667,Producción de petróleo promedio diaria por empresa
+2026-06,2026-06-01,2026,6,petroleo,empresa,HATTRICK ENERGY SAS,promedio_diario,152.701,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,HIGH LUCK GROUP LTD. - SUCURSAL ARGENTINA,promedio_diario,14.91644379,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,INGENIERIA ALPA S.A.,promedio_diario,35.8593333333333,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,INGENIERIA SIMA S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
@@ -12615,28 +12620,147 @@
 2026-06,2026-06-01,2026,6,petroleo,empresa,JUJUY HIDROCARBUROS SAU,promedio_diario,27.0744333333333,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,OILSTONE ENERGIA S.A.,promedio_diario,230.072333333333,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,PAMPA ENERGIA S.A.,promedio_diario,3302.14833333333,Producción de petróleo promedio diaria por empresa
+2026-06,2026-06-01,2026,6,petroleo,empresa,PAMPETROL S.A.P.E.M,promedio_diario,36.1736666666667,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,PAN AMERICAN ENERGY SL,promedio_diario,15524.101,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,PATAGONIA ENERGY S.A.,promedio_diario,9.74266666666667,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,PATAGONIA RESOURCES S.A. ,promedio_diario,1139.92383333333,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,PECOM SERVICIOS ENERGIA SAU,promedio_diario,5321.51933333333,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,PETROFARO S.A.,promedio_diario,0.266666666666667,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,PETROLEOS SUDAMERICANOS S.A.,promedio_diario,2196.7687,Producción de petróleo promedio diaria por empresa
+2026-06,2026-06-01,2026,6,petroleo,empresa,PETROLERA DEL COMAHUE S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,PETROLERA PAMPA S.A. ,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,PETROLERA SAN MIGUEL S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,PETROLERA SANTA MARIA SAU,promedio_diario,312.386,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,PETROLSUR ENERGIA S.A. ,promedio_diario,0.772333333333333,Producción de petróleo promedio diaria por empresa
+2026-06,2026-06-01,2026,6,petroleo,empresa,PETROQUIMICA COMODORO RIVADAVIA S.A.,promedio_diario,779.494,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,PHOENIX GLOBAL RESOURCES S.A.,promedio_diario,3812.78113333333,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,PLUSPETROL CUENCA NEUQUINA S.R.L.,promedio_diario,6378.973,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,PLUSPETROL S.A.,promedio_diario,7718.77456666667,Producción de petróleo promedio diaria por empresa
+2026-06,2026-06-01,2026,6,petroleo,empresa,Pilgrim Energy S.A.,promedio_diario,29.9000833333333,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,QUINTANA E&P ARGENTINA S.R.L.,promedio_diario,1332.17801254865,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,RECURSOS Y ENERGIA FORMOSA S.A.,promedio_diario,104.827666666667,Producción de petróleo promedio diaria por empresa
+2026-06,2026-06-01,2026,6,petroleo,empresa,RIBEIRO S.R.L,promedio_diario,457.978666666667,Producción de petróleo promedio diaria por empresa
+2026-06,2026-06-01,2026,6,petroleo,empresa,ROCH S.A.,promedio_diario,964.340533333333,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,SAN JORGE PETROLEUM S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,SELVA MARIA OIL S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,SHELL ARGENTINA S.A.,promedio_diario,6293.12566666667,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,TANGO ENERGY ARGENTINA S.A.,promedio_diario,1168.06163333333,Producción de petróleo promedio diaria por empresa
-2026-06,2026-06-01,2026,6,petroleo,empresa,TECPETROL S.A.,promedio_diario,3143.99483333333,Producción de petróleo promedio diaria por empresa
+2026-06,2026-06-01,2026,6,petroleo,empresa,TECPETROL S.A.,promedio_diario,3143.99486666667,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,TOTAL AUSTRAL S.A.,promedio_diario,1257.66106666667,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,VACA MUERTA INVERSIONES SAU,promedio_diario,672.160333333333,Producción de petróleo promedio diaria por empresa
+2026-06,2026-06-01,2026,6,petroleo,empresa,VELITEC S.A.,promedio_diario,140.158666666667,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,VENOIL S.A.,promedio_diario,239.119333333333,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,VISTA ENERGY ARGENTINA SAU,promedio_diario,12707.4646666667,Producción de petróleo promedio diaria por empresa
 2026-06,2026-06-01,2026,6,petroleo,empresa,YPF S.A.,promedio_diario,54847.0636666667,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,ALIANZA PETROLERA ARGENTINA S.A.,promedio_diario,1.0,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,ARGENTA ENERGIA S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,AZRUGE S.A.,promedio_diario,21.5038709677419,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,BENTIA ENERGY S.A.,promedio_diario,493.875483870968,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,CAPETROL ARGENTINA S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,CAPETROL S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,CAPEX S.A.,promedio_diario,1503.60322580645,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,CHEVRON ARGENTINA S.R.L.,promedio_diario,3485.96258064516,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,COLHUE HUAPI S.A.,promedio_diario,51.741935483871,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,COMPAÑÍA GENERAL DE COMBUSTIBLES S.A.,promedio_diario,2446.49290322581,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,COMPAÑÍAS ASOCIADAS PETROLERAS S.A.,promedio_diario,1778.74258064516,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,CONTINENTAL RESOURCES ARGENTINA SAU.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,COPESA CIA CONSTRUCTORA PETROLERA SA,promedio_diario,52.3635483870968,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,CROWN POINT ENERGIA S.A.,promedio_diario,1101.00458064516,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,Clear Petroleum S.A.,promedio_diario,1178.37838709677,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,E.M.E.S.A,promedio_diario,24.5666774193548,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,EDHIPSA,promedio_diario,90.8387096774194,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,ENERGICON S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,FLXS OGE S.A ,promedio_diario,74.4887096774194,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,FOMICRUZ S.E.,promedio_diario,11.0967741935484,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,G Y G OIL SERVICE SRL,promedio_diario,2.10290322580645,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,GEOPARK ARGENTINA S.A.,promedio_diario,65.2354838709677,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,GEOPETROL DRILLING S.A.,promedio_diario,42.8667741935484,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,HATTRICK ENERGY SAS,promedio_diario,131.095161290323,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,HIGH LUCK GROUP LTD. - SUCURSAL ARGENTINA,promedio_diario,15.0576129032258,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,INGENIERIA ALPA S.A.,promedio_diario,40.3032258064516,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,INGENIERIA SIMA S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,INTEROIL ARGENTINA S A,promedio_diario,8.77796415483871,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,JUJUY HIDROCARBUROS SAU,promedio_diario,26.7785806451613,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,OILSTONE ENERGIA S.A.,promedio_diario,220.813548387097,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,PAMPA ENERGIA S.A.,promedio_diario,2643.64612903226,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,PAMPETROL S.A.P.E.M,promedio_diario,34.9338709677419,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,PAN AMERICAN ENERGY SL,promedio_diario,16361.2170967742,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,PATAGONIA ENERGY S.A.,promedio_diario,15.658064516129,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,PATAGONIA RESOURCES S.A. ,promedio_diario,1059.57964516129,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,PECOM SERVICIOS ENERGIA SAU,promedio_diario,5224.94096774194,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,PETROFARO S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,PETROLEOS SUDAMERICANOS S.A.,promedio_diario,2161.54961290323,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,PETROLERA PAMPA S.A. ,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,PETROLERA SAN MIGUEL S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,PETROLERA SANTA MARIA SAU,promedio_diario,313.086774193548,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,PETROLSUR ENERGIA S.A. ,promedio_diario,0.80258064516129,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,PETROQUIMICA COMODORO RIVADAVIA S.A.,promedio_diario,828.534193548387,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,PHOENIX GLOBAL RESOURCES S.A.,promedio_diario,4133.91287096774,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,PLUSPETROL CUENCA NEUQUINA S.R.L.,promedio_diario,7246.5064516129,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,PLUSPETROL S.A.,promedio_diario,7698.00574193548,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,Pilgrim Energy S.A.,promedio_diario,29.3902161290323,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,QUINTANA E&P ARGENTINA S.R.L.,promedio_diario,1307.90214117612,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,RECURSOS Y ENERGIA FORMOSA S.A.,promedio_diario,92.9825806451613,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,RIBEIRO S.R.L,promedio_diario,420.888387096774,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,ROCH S.A.,promedio_diario,833.324516129032,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,SAN JORGE PETROLEUM S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,SELVA MARIA OIL S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,SHELL ARGENTINA S.A.,promedio_diario,7056.76032258065,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,TANGO ENERGY ARGENTINA S.A.,promedio_diario,1182.87412903226,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,TECPETROL S.A.,promedio_diario,3012.00322580645,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,TOTAL AUSTRAL S.A.,promedio_diario,1260.14861290323,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,VACA MUERTA INVERSIONES SAU,promedio_diario,434.326129032258,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,VELITEC S.A.,promedio_diario,163.172903225806,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,VENOIL S.A.,promedio_diario,228.982258064516,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,VISTA ENERGY ARGENTINA SAU,promedio_diario,13000.85,Producción de petróleo promedio diaria por empresa
+2026-07,2026-07-01,2026,7,petroleo,empresa,YPF S.A.,promedio_diario,54636.5151612903,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,ALIANZA PETROLERA ARGENTINA S.A.,promedio_diario,0.764516129032258,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,ARGENTA ENERGIA S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,BENTIA ENERGY S.A.,promedio_diario,499.492258064516,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,CAPETROL ARGENTINA S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,CAPETROL S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,CAPEX S.A.,promedio_diario,1491.10096774194,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,CHEVRON ARGENTINA S.R.L.,promedio_diario,3876.33806451613,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,COLHUE HUAPI S.A.,promedio_diario,48.2258064516129,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,COMPAÑÍA GENERAL DE COMBUSTIBLES S.A.,promedio_diario,2482.01161290323,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,COMPAÑÍAS ASOCIADAS PETROLERAS S.A.,promedio_diario,1741.06870967742,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,CONTINENTAL RESOURCES ARGENTINA SAU.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,COPESA CIA CONSTRUCTORA PETROLERA SA,promedio_diario,51.0677419354839,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,CROWN POINT ENERGIA S.A.,promedio_diario,1101.94980645161,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,E.M.E.S.A,promedio_diario,23.6783225806452,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,EDHIPSA,promedio_diario,91.2920646451613,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,FLXS OGE S.A ,promedio_diario,65.9977419354839,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,FOMICRUZ S.E.,promedio_diario,11.5161290322581,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,G Y G OIL SERVICE SRL,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,GEOPARK ARGENTINA S.A.,promedio_diario,263.693870967742,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,GEOPETROL DRILLING S.A.,promedio_diario,41.1695161290323,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,HIGH LUCK GROUP LTD. - SUCURSAL ARGENTINA,promedio_diario,14.9119996935484,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,INGENIERIA ALPA S.A.,promedio_diario,40.0338709677419,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,INGENIERIA SIMA S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,INTEROIL ARGENTINA S A,promedio_diario,12.9062905403226,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,JUJUY HIDROCARBUROS SAU,promedio_diario,27.0285806451613,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,PAMPA ENERGIA S.A.,promedio_diario,3222.84903225806,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,PAMPETROL S.A.P.E.M,promedio_diario,34.9635483870968,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,PAN AMERICAN ENERGY SL,promedio_diario,16584.6029032258,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,PATAGONIA ENERGY S.A.,promedio_diario,10.5006451612903,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,PATAGONIA RESOURCES S.A. ,promedio_diario,1028.81903225806,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,PECOM SERVICIOS ENERGIA SAU,promedio_diario,5159.29,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,PETROLERA PAMPA S.A. ,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,PETROLSUR ENERGIA S.A. ,promedio_diario,0.869032258064516,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,PETROQUIMICA COMODORO RIVADAVIA S.A.,promedio_diario,811.175806451613,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,PHOENIX GLOBAL RESOURCES S.A.,promedio_diario,4016.81580645161,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,PLUSPETROL CUENCA NEUQUINA S.R.L.,promedio_diario,7436.48483870968,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,PLUSPETROL S.A.,promedio_diario,7653.46290322581,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,QUINTANA E&P ARGENTINA S.R.L.,promedio_diario,1277.23454142103,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,RECURSOS Y ENERGIA FORMOSA S.A.,promedio_diario,86.4335483870968,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,RIBEIRO S.R.L,promedio_diario,375.437741935484,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,SAN JORGE PETROLEUM S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,SELVA MARIA OIL S.A.,promedio_diario,0.0,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,SHELL ARGENTINA S.A.,promedio_diario,6798.64806451613,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,TANGO ENERGY ARGENTINA S.A.,promedio_diario,1188.32887096774,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,TECPETROL S.A.,promedio_diario,2976.631,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,TOTAL AUSTRAL S.A.,promedio_diario,1288.66590322581,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,VACA MUERTA INVERSIONES SAU,promedio_diario,273.699032258065,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,VENOIL S.A.,promedio_diario,229.298387096774,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,VISTA ENERGY ARGENTINA SAU,promedio_diario,12961.0212903226,Producción de petróleo promedio diaria por empresa
+2026-08,2026-08-01,2026,8,petroleo,empresa,YPF S.A.,promedio_diario,57921.134516129,Producción de petróleo promedio diaria por empresa

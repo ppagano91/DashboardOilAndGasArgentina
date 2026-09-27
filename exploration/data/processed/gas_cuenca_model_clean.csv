@@ -2059,20 +2059,38 @@
 2026-04,2026-04-01,2026,4,gas,cuenca,NOROESTE,promedio_diario,2683.26323333333,Producción de gas promedio diaria por cuenca
 2026-04,2026-04-01,2026,4,gas,cuenca,ÑIRIHUAU,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
 2026-05,2026-05-01,2026,5,gas,cuenca,ARGENTINA NORTE,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
-2026-05,2026-05-01,2026,5,gas,cuenca,AUSTRAL,promedio_diario,26242.5987549355,Producción de gas promedio diaria por cuenca
+2026-05,2026-05-01,2026,5,gas,cuenca,AUSTRAL,promedio_diario,26345.6836451613,Producción de gas promedio diaria por cuenca
 2026-05,2026-05-01,2026,5,gas,cuenca,CAÑADON ASFALTO,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
 2026-05,2026-05-01,2026,5,gas,cuenca,CUYANA,promedio_diario,88.1460967741936,Producción de gas promedio diaria por cuenca
 2026-05,2026-05-01,2026,5,gas,cuenca,GOLFO SAN JORGE,promedio_diario,8319.29490322581,Producción de gas promedio diaria por cuenca
-2026-05,2026-05-01,2026,5,gas,cuenca,NEUQUINA,promedio_diario,119261.612064516,Producción de gas promedio diaria por cuenca
+2026-05,2026-05-01,2026,5,gas,cuenca,NEUQUINA,promedio_diario,119042.559483871,Producción de gas promedio diaria por cuenca
 2026-05,2026-05-01,2026,5,gas,cuenca,NORESTE,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
 2026-05,2026-05-01,2026,5,gas,cuenca,NOROESTE,promedio_diario,2672.5824516129,Producción de gas promedio diaria por cuenca
 2026-05,2026-05-01,2026,5,gas,cuenca,ÑIRIHUAU,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
 2026-06,2026-06-01,2026,6,gas,cuenca,ARGENTINA NORTE,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
-2026-06,2026-06-01,2026,6,gas,cuenca,AUSTRAL,promedio_diario,25125.7784666667,Producción de gas promedio diaria por cuenca
+2026-06,2026-06-01,2026,6,gas,cuenca,AUSTRAL,promedio_diario,25975.9978,Producción de gas promedio diaria por cuenca
 2026-06,2026-06-01,2026,6,gas,cuenca,CAÑADON ASFALTO,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
 2026-06,2026-06-01,2026,6,gas,cuenca,CUYANA,promedio_diario,86.9822,Producción de gas promedio diaria por cuenca
-2026-06,2026-06-01,2026,6,gas,cuenca,GOLFO SAN JORGE,promedio_diario,7835.6628,Producción de gas promedio diaria por cuenca
-2026-06,2026-06-01,2026,6,gas,cuenca,NEUQUINA,promedio_diario,122495.0862,Producción de gas promedio diaria por cuenca
+2026-06,2026-06-01,2026,6,gas,cuenca,GOLFO SAN JORGE,promedio_diario,8179.26105,Producción de gas promedio diaria por cuenca
+2026-06,2026-06-01,2026,6,gas,cuenca,NEUQUINA,promedio_diario,122787.942366667,Producción de gas promedio diaria por cuenca
 2026-06,2026-06-01,2026,6,gas,cuenca,NORESTE,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
 2026-06,2026-06-01,2026,6,gas,cuenca,NOROESTE,promedio_diario,2663.23606666667,Producción de gas promedio diaria por cuenca
 2026-06,2026-06-01,2026,6,gas,cuenca,ÑIRIHUAU,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
+2026-07,2026-07-01,2026,7,gas,cuenca,ARGENTINA NORTE,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
+2026-07,2026-07-01,2026,7,gas,cuenca,AUSTRAL,promedio_diario,25897.3023870968,Producción de gas promedio diaria por cuenca
+2026-07,2026-07-01,2026,7,gas,cuenca,CAÑADON ASFALTO,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
+2026-07,2026-07-01,2026,7,gas,cuenca,CUYANA,promedio_diario,84.8063548387097,Producción de gas promedio diaria por cuenca
+2026-07,2026-07-01,2026,7,gas,cuenca,GOLFO SAN JORGE,promedio_diario,7906.88091935484,Producción de gas promedio diaria por cuenca
+2026-07,2026-07-01,2026,7,gas,cuenca,NEUQUINA,promedio_diario,121816.697580645,Producción de gas promedio diaria por cuenca
+2026-07,2026-07-01,2026,7,gas,cuenca,NORESTE,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
+2026-07,2026-07-01,2026,7,gas,cuenca,NOROESTE,promedio_diario,2649.13370967742,Producción de gas promedio diaria por cuenca
+2026-07,2026-07-01,2026,7,gas,cuenca,ÑIRIHUAU,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
+2026-08,2026-08-01,2026,8,gas,cuenca,ARGENTINA NORTE,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
+2026-08,2026-08-01,2026,8,gas,cuenca,AUSTRAL,promedio_diario,23592.218483871,Producción de gas promedio diaria por cuenca
+2026-08,2026-08-01,2026,8,gas,cuenca,CAÑADON ASFALTO,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
+2026-08,2026-08-01,2026,8,gas,cuenca,CUYANA,promedio_diario,23.0813870967742,Producción de gas promedio diaria por cuenca
+2026-08,2026-08-01,2026,8,gas,cuenca,GOLFO SAN JORGE,promedio_diario,7501.65651612903,Producción de gas promedio diaria por cuenca
+2026-08,2026-08-01,2026,8,gas,cuenca,NEUQUINA,promedio_diario,118344.897612903,Producción de gas promedio diaria por cuenca
+2026-08,2026-08-01,2026,8,gas,cuenca,NORESTE,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
+2026-08,2026-08-01,2026,8,gas,cuenca,NOROESTE,promedio_diario,2597.20183870968,Producción de gas promedio diaria por cuenca
+2026-08,2026-08-01,2026,8,gas,cuenca,ÑIRIHUAU,promedio_diario,0.0,Producción de gas promedio diaria por cuenca
